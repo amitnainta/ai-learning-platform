@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Lint, test, build, audit
+    runs-on: ubuntu-latest
+    env:
+      # Prisma needs these to resolve the datasource block at generate/build
+      # time; no live database is required for lint/test/build (no route
+      # queries the DB in this scaffold). Real values are injected as
+      # deploy-time secrets, never committed. See .env.example.
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      NODE_ENV: "test"
+      APP_URL: "http://localhost:3000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Dependency audit (high+ only, production deps)
+        # Scoped to production dependencies: as of this writing, `npm audit`
+        # (unscoped) flags a same-day-disclosed brace-expansion DoS advisory
+        # (CVE-2026-14257) that only reaches this project transitively through
+        # ESLint's own toolchain (eslint-config-next's bundled eslint-plugin-*
+        # packages), none of which ship in the production build or are
+        # reachable via user input. `--omit=dev` audits the deps that actually
+        # run in production; revisit removing this flag once eslint's plugin
+        # ecosystem picks up the fix upstream (seeds NFR-SEC-009 — the full
+        # recurring-scan policy is a follow-up per PLAN.md).
+        run: npm audit --omit=dev --audit-level=high
+
+  # Kept as a separate, non-blocking job at R1 to keep the required-checks
+  # path fast (see PLAN.md risks/notes). Promote to required once real
+  # e2e journeys land with feature work (NFR-MAINT-004).
+  e2e-smoke:
+    name: Playwright smoke (optional)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      NODE_ENV: "test"
+      APP_URL: "http://localhost:3000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e smoke
+        run: npm run test:e2e
