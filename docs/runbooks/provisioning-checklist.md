@@ -4,8 +4,11 @@ These are account/credential/monitor provisioning actions that a builder agent
 cannot and must not perform (no fabricated credentials, no account creation on
 the human's behalf). None of these are assumed complete by the code in this
 repo — every environment variable they produce degrades gracefully to a
-documented no-op or fails fast with a clear error when absent (see
-`src/lib/env.ts`, `sentry.*.config.ts`).
+documented no-op or fails fast with a clear error when absent: `DATABASE_URL`/
+`DIRECT_URL` fail fast via `src/lib/env.ts`'s `getEnv()`, called from
+`src/lib/prisma.ts` before the Prisma client is constructed; `SENTRY_DSN`/
+`NEXT_PUBLIC_SENTRY_DSN` no-op via `sentry.server.config.ts`,
+`sentry.edge.config.ts`, and `src/instrumentation-client.ts`.
 
 Check each off only after actually performing it outside this repo.
 
@@ -41,6 +44,12 @@ Check each off only after actually performing it outside this repo.
 - [ ] Run the restore drill once, per
       `docs/runbooks/backup-and-restore.md`, and record the result in that
       document's restore-drill table (date, method, result).
+- [ ] Configure GitHub branch protection on `main` (Settings → Branches →
+      branch protection rules): require the `Lint, test, build, audit` status
+      check from `.github/workflows/ci.yml` to pass before merging, and
+      disallow direct pushes to `main`. Without this, a red CI run does not
+      actually block a merge — the workflow only reports status, it does not
+      enforce anything on its own.
 
 ## Why these stay manual
 

@@ -104,8 +104,12 @@ connection strings that map cleanly onto Prisma's serverless deployment model:
   session-level connection that a transaction pooler cannot provide
   (`DIRECT_URL`).
 
-Both are wired into `prisma/schema.prisma`'s `datasource` block and validated at
-runtime by `src/lib/env.ts`.
+Both are wired into `prisma/schema.prisma`'s `datasource` block. Runtime
+validation happens in `src/lib/prisma.ts`: the Prisma client singleton calls
+`src/lib/env.ts`'s `getEnv()` before constructing `PrismaClient`, so a
+missing/malformed `DATABASE_URL` or `DIRECT_URL` throws a clear, aggregated
+error the first time any caller imports the singleton, rather than surfacing
+later as an opaque Prisma connection error.
 
 **Rejected alternatives**:
 
@@ -152,14 +156,27 @@ providers later should not require touching call sites.
   captured and triaged via a tool, not logs alone) _and_ the
   performance/latency capture mechanism (NFR-OBS-001's "monitoring... for error
   rates, latency"). Wired via `@sentry/nextjs` with three runtime-specific init
-  files (`sentry.client.config.ts`, `sentry.server.config.ts`,
-  `sentry.edge.config.ts`) loaded through `src/instrumentation.ts`, each reading
-  its DSN from an environment variable (`NEXT_PUBLIC_SENTRY_DSN` client-side,
-  `SENTRY_DSN` server/edge-side) and initializing with `enabled: false` when
-  that DSN is absent — so local dev, CI, and any not-yet-provisioned
-  environment never error and never attempt a network call. `tracesSampleRate`
-  is set to `1.0` for now (100% of a low-traffic beta's requests) and should be
-  tuned down once real production traffic arrives.
+  paths, each reading its DSN from an environment variable
+  (`NEXT_PUBLIC_SENTRY_DSN` client-side, `SENTRY_DSN` server/edge-side) and
+  initializing with `enabled: false` when that DSN is absent — so local dev,
+  CI, and any not-yet-provisioned environment never error and never attempt a
+  network call. `tracesSampleRate` is set to `1.0` for now (100% of a
+  low-traffic beta's requests) and should be tuned down once real production
+  traffic arrives. The three runtimes load differently, deliberately:
+  - **Server and edge** (`sentry.server.config.ts`, `sentry.edge.config.ts`) —
+    loaded through `src/instrumentation.ts`'s `register()` hook, the Next.js
+    server-runtime instrumentation convention.
+  - **Client** (`src/instrumentation-client.ts`) — loaded natively by Next.js
+    directly into the client bundle (Next.js's `instrumentation-client`
+    file-convention, independent of bundler). This is deliberately **not**
+    `sentry.client.config.ts`: that older convention is only picked up by a
+    webpack plugin that `withSentryConfig()` installs, and this project builds
+    with Turbopack, under which that file is never loaded at all (the
+    scaffold's `next.config.ts` does not wrap the config in
+    `withSentryConfig()`, and doesn't need to for client capture to work).
+    `register()` in `src/instrumentation.ts` only ever runs server/edge-side —
+    it has no browser equivalent, which is why the client init needs its own,
+    separate file and loading mechanism.
 - **External uptime monitor** (Better Stack or UptimeRobot free tier) — polls
   `GET /api/health` from outside Vercel's own infrastructure and alerts on
   outage, which is what actually satisfies "availability" monitoring/alerting

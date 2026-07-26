@@ -75,18 +75,24 @@ external uptime monitor and for CI/deploy smoke checks.
 
 ## Environment variables
 
-See `.env.example` for the full list with descriptions. `src/lib/env.ts`
-validates these with `zod` the first time a caller actually needs them (e.g.
-the Prisma client) and throws a clear, aggregated error listing everything
-missing/invalid — so a misconfigured environment fails fast with an actionable
-message rather than a cryptic error deep in a request.
+See `.env.example` for the full list with descriptions. `src/lib/env.ts`'s
+`getEnv()` validates `DATABASE_URL`/`DIRECT_URL`/`APP_URL` with `zod` and
+throws a clear, aggregated error listing everything missing/invalid.
+`src/lib/prisma.ts` calls `getEnv()` before constructing the Prisma client
+singleton, so a misconfigured environment fails fast with an actionable
+message the first time anything imports that module, rather than surfacing
+later as a cryptic Prisma connection error.
 
 ## Testing
 
 - **Unit/component** (`npm run test`): Vitest + React Testing Library, jsdom
   environment. Setup file: `src/test/setup.ts`. Sample:
   `src/app/__tests__/home.test.tsx`.
-- **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project.
+- **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project. On a
+  fresh machine, install the browser binary once first:
+  `npx playwright install --with-deps chromium` (CI's `e2e-smoke` job does this
+  automatically; it is not a one-time global install, so run it again if
+  Playwright reports a missing browser after an update).
   `playwright.config.ts`'s `webServer` builds and starts the app automatically
   (`npm run build && npm run start`) before running tests, and reuses an
   already-running dev server locally if `reuseExistingServer` conditions are
@@ -151,13 +157,13 @@ src/
   lib/
     env.ts               # zod-validated environment accessor
     prisma.ts            # hot-reload/serverless-safe Prisma client singleton
-  instrumentation.ts     # Next.js instrumentation hook — loads Sentry per runtime
+  instrumentation.ts     # Next.js instrumentation hook — loads Sentry server/edge init
+  instrumentation-client.ts # Next.js client-bundle hook — loads Sentry client init
   test/setup.ts          # Vitest + jest-dom setup
 prisma/
   schema.prisma          # stub datasource + one trivial model (toolchain proof only)
 e2e/
   smoke.spec.ts          # Playwright smoke test
-sentry.client.config.ts
 sentry.server.config.ts
 sentry.edge.config.ts     # per-runtime Sentry init (no-op without a DSN)
 docs/
