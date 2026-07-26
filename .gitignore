@@ -4,17 +4,33 @@ node_modules/
 out/
 build/
 dist/
+next-env.d.ts
+.vercel/
 
-# Env
+# Env (keep .env.example, ignore everything else that could hold secrets)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+
+# Prisma generated client
+src/generated/prisma/
+prisma/generated/
+
+# Test / coverage artifacts
+coverage/
+.vitest-cache/
+
+# Playwright artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
+blob-report/
 
 # Editor/OS
 .DS_Store

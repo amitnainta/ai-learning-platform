@@ -1,0 +1,19 @@
+node_modules
+.next
+out
+build
+dist
+coverage
+playwright-report
+test-results
+src/generated
+prisma/generated
+package-lock.json
+next-env.d.ts
+
+# Factory workflow artifacts (plans/reviews/requirements) — these are
+# hand-authored process documents, not code; letting Prettier reformat them
+# corrupts inline markdown (e.g. italics, DATABASE_URL/DIRECT_URL) that the
+# factory pipeline and human reviewers rely on reading verbatim.
+factory/
+docs/requirements/
