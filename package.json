@@ -1,0 +1,54 @@
+{
+  "name": "ai-learning-platform",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@prisma/client": "6.19.3",
+    "zod": "4.4.3",
+    "@sentry/nextjs": "10.68.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.15.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12",
+    "typescript-eslint": "8.65.0",
+    "prettier": "3.6.2",
+    "vitest": "4.1.10",
+    "@vitejs/plugin-react": "5.1.2",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "jsdom": "26.1.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "@playwright/test": "1.62.0",
+    "prisma": "6.19.3"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
+  }
+}
