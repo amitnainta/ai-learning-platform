@@ -117,7 +117,7 @@ These are provisioning actions the builder agent cannot perform; list them and s
 1. npm ci && npm run build completes cleanly from a fresh checkout; npm run dev serves the placeholder home page. _(scaffolding)_
 2. npm run lint and npm run format run and pass on the scaffold. _(scaffolding)_
 3. npm run test runs the Vitest sample and passes; npm run test:e2e runs the Playwright smoke and passes locally. _(NFR-MAINT-004 harness)_
-4. prisma generate succeeds against the stub schema, and prisma migrate runs against a Neon DATABASE*URL/DIRECT_URL; the Prisma client is a hot-reload-safe singleton. *(NFR-SCALE-002 foundation, NFR-SCALE-001 statelessness)\_
+4. prisma generate succeeds against the stub schema, and prisma migrate runs against a Neon DATABASE_URL/DIRECT_URL; the Prisma client is a hot-reload-safe singleton. _(NFR-SCALE-002 foundation, NFR-SCALE-001 statelessness)_
 5. /api/health returns HTTP 200 { status: "ok" }; an external uptime monitor is documented as polling it. _(NFR-AVAIL-001, NFR-OBS-001)_
 6. Responses carry an HSTS header; the deployed site serves only over HTTPS with HTTP redirecting to HTTPS and no plaintext endpoint. _(NFR-SEC-002)_
 7. docs/architecture/infrastructure.md exists and, for each of NFR-SCALE-001 and NFR-SCALE-003, names the concrete mechanism (Vercel stateless serverless behind an edge load balancer; Edge CDN + Vercel Blob for assets/media) — not a placeholder. _(NFR-SCALE-001, -003)_
@@ -243,3 +243,66 @@ dev`/`deploy` against a real Neon `DATABASE_URL`/`DIRECT_URL` was **not**
    not create. `docs/runbooks/provisioning-checklist.md` and
    `docs/runbooks/backup-and-restore.md`'s restore-drill table are written and
    ready for the human to work through and fill in.
+
+## Builder notes (fix pass — REVIEW.md B1/B2 + cheap follow-ups)
+
+Resolved both blocking review findings plus the three follow-ups the reviewer
+recommended folding into the same pass (F1, F2, F5). No plan tasks were
+reopened or expanded; these are corrections to already-checked tasks 6, 10, 18,
+20, 23, 24.
+
+1. **B1 (client Sentry dead code) — fixed by moving to
+   `src/instrumentation-client.ts`.** Confirmed empirically (see below) that
+   `@sentry/nextjs@10.68.0`'s webpack plugin only injects `sentry.client.config.ts`
+   into the client entry when `next.config.ts` is wrapped in `withSentryConfig()`
+   — and even then, that file's own deprecation warning says it "will no longer
+   work" under Turbopack, which is what this project's `next build`/`next dev`
+   use. Verified in
+   `node_modules/@sentry/nextjs/build/cjs/config/withSentryConfig/buildTime.js`
+   and `node_modules/next/dist/build/create-compiler-aliases.js` that Next.js
+   itself natively aliases `src/instrumentation-client.ts` (or root
+   `instrumentation-client.ts`) into the client bundle regardless of bundler —
+   this is the modern, bundler-independent convention and needs no
+   `withSentryConfig()` wrapper at all. Deleted `sentry.client.config.ts`
+   (dead code), created `src/instrumentation-client.ts` with the same
+   `Sentry.init()` (DSN-gated, no-ops when `NEXT_PUBLIC_SENTRY_DSN` is unset)
+   plus the `onRouterTransitionStart` export `@sentry/nextjs` expects from that
+   file for navigation instrumentation. Updated `src/instrumentation.ts`'s
+   comment to clarify `register()` only ever covers server/edge. Removed the
+   now-nonexistent `sentry.client.config.ts` from `tsconfig.json`'s `include`.
+2. **B2 (`getEnv()` had zero call sites) — fixed by wiring it into
+   `src/lib/prisma.ts`.** `createPrismaClient()` now calls `getEnv()` before
+   `new PrismaClient()`, so a missing/invalid `DATABASE_URL`/`DIRECT_URL` fails
+   fast with `getEnv()`'s aggregated zod error the first time anything imports
+   the Prisma singleton, instead of surfacing later as an opaque Prisma
+   connection error. Confirmed no current call site imports `src/lib/prisma.ts`
+   (health route is deliberately DB-independent), so this does not affect
+   `next build`/CI, matching what the reviewer verified about the schema.
+3. **Docs corrected to match reality** (the four/five false statements B2
+   flagged, plus the Sentry-loading description B1's fix invalidated):
+   `docs/architecture/infrastructure.md` (§2 Neon paragraph, §4 Sentry
+   paragraph), `README.md` (Environment variables section, project-structure
+   file listing), `docs/runbooks/provisioning-checklist.md` (intro paragraph).
+4. **F1** — README's Testing section now says `npx playwright install
+--with-deps chromium` is required before `npm run test:e2e` works on a fresh
+   machine.
+5. **F2** — added a GitHub branch-protection checklist item to
+   `docs/runbooks/provisioning-checklist.md` (required status check + no
+   direct pushes to `main`), since AC12's "CI... blocks on failure" isn't true
+   until that manual step is done.
+6. **F5** — added `factory/` and `docs/requirements/` to `.prettierignore`, and
+   fixed the pre-existing Prettier corruption in this file's own AC4 line
+   (`DATABASE*URL` → `DATABASE_URL`, restored the italic marker) that F5
+   identified as already having happened once.
+7. **Empirical AC8 verification** (both paths, addressing the tester/reviewer's
+   criticism that only the no-op path had been checked): with
+   `NEXT_PUBLIC_SENTRY_DSN` unset, fresh `rm -rf .next && npm run build`
+   completes with no crash/error either at build or `npm run dev`/`start`. With
+   `NEXT_PUBLIC_SENTRY_DSN` set to a real-shaped DSN, fresh
+   `rm -rf .next && npm run build` then grepping `.next/static` for `sentry`
+   and `ingest.sentry.io` now returns matches (previously zero) — see the
+   builder's report for exact counts/output at the time of this fix.
+8. **F3, F4, F6 intentionally left untouched**, per the reviewer's own
+   classification as non-blocking, defensible-as-is follow-ups, and per this
+   work item's out-of-scope list not to re-litigate the audit-scoping decision
+   or the overrides.
