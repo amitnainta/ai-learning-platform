@@ -51,6 +51,45 @@ Check each off only after actually performing it outside this repo.
       actually block a merge — the workflow only reports status, it does not
       enforce anything on its own.
 
+### Added by user-accounts-auth
+
+- [ ] Generate a `BETTER_AUTH_SECRET` (`openssl rand -base64 32`) and add it
+      to `.env.local`, to the Vercel project environment variables (all
+      environments), and as a GitHub Actions secret if any workflow needs a
+      real one (the CI workflow itself only ever uses a placeholder — see
+      `.github/workflows/ci.yml`). **Fails fast** via `src/lib/env.ts`'s
+      `getEnv()` if missing or under 32 characters.
+- [ ] Create a Resend account and copy an API key into `RESEND_API_KEY`
+      (Vercel env vars). **Degrades gracefully**: without it, transactional
+      mail (verification, password reset, account-deletion confirmation)
+      falls back to the console transport and nothing crashes, but password
+      reset is unusable for real users until this is done.
+- [ ] Verify a sending domain in Resend and set `EMAIL_FROM` to an address on
+      it. Note the constraint: until a domain is verified, the Resend shared
+      test sender only delivers to the Resend account owner's own address —
+      this is effectively blocked on the still-open custom-domain question
+      from the scaffolding item (see `docs/architecture/infrastructure.md`
+      §1 and its open risk). Beta workaround: verify a domain you already
+      own, or accept owner-only delivery in staging.
+- [ ] Add `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, and (if it
+      differs from `APP_URL`) `BETTER_AUTH_URL` to the Vercel project
+      environment variables, alongside the `DATABASE_URL`/`DIRECT_URL`/
+      `SENTRY_DSN`/etc. already listed above.
+- [ ] Run `npx prisma migrate deploy` against the real Neon database (or wire
+      it into the Vercel build command) so the account/session/auth tables
+      in `prisma/migrations/` actually exist in the deployed environment.
+      Without this, every request that touches `src/lib/prisma.ts` fails at
+      the database, not at `getEnv()` — there is no code-level guard for "the
+      schema is provisioned," only for "the connection strings are
+      well-formed."
+- [ ] After the first real deploy, send yourself a password-reset email end
+      to end and confirm delivery (not spam-foldered). This is the only way
+      to validate the Resend domain setup actually works for a real inbox.
+- [ ] Re-check GitHub branch protection (the item above): the required
+      status-check list should now also include the `e2e` job from
+      `.github/workflows/ci.yml`, which this item promotes from an optional,
+      `continue-on-error` smoke test to a blocking check.
+
 ## Why these stay manual
 
 Each of these requires either a real external account, a real payment/free-tier

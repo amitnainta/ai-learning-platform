@@ -12,13 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Prisma needs these to resolve the datasource block at generate/build
-      # time; no live database is required for lint/test/build (no route
-      # queries the DB in this scaffold). Real values are injected as
-      # deploy-time secrets, never committed. See .env.example.
+      # time; no live database is required for lint/test/build — Vitest
+      # mocks Prisma/env everywhere it's exercised (see
+      # src/lib/auth/__tests__/options.test.ts) and no build-time route
+      # actually queries the DB. Real values are injected as deploy-time
+      # secrets, never committed. See .env.example.
       DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
       DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
       NODE_ENV: "test"
       APP_URL: "http://localhost:3000"
+      # Placeholder only — min-32-chars format satisfies src/lib/env.ts's
+      # validation so `npm run build` doesn't fail; never a real secret, and
+      # never used to sign anything outside this job's own throwaway build.
+      BETTER_AUTH_SECRET: "ci-placeholder-secret-not-real-min-32-chars"
+      # Console transport would also work here (build/lint/test never send
+      # mail), but pinning it explicitly keeps both jobs' env blocks
+      # consistent and avoids depending on the resend/console fallback rule.
+      MAIL_TRANSPORT: "file"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,18 +63,42 @@ jobs:
         # recurring-scan policy is a follow-up per PLAN.md).
         run: npm audit --omit=dev --audit-level=high
 
-  # Kept as a separate, non-blocking job at R1 to keep the required-checks
-  # path fast (see PLAN.md risks/notes). Promote to required once real
-  # e2e journeys land with feature work (NFR-MAINT-004).
-  e2e-smoke:
-    name: Playwright smoke (optional)
+  # Promoted to blocking (task 50, user-accounts-auth): now covers the real
+  # registration/placement, login/logout, password-reset, profile-change,
+  # and export/delete journeys (NFR-MAINT-004), not just a harness smoke
+  # test, so a red run here should block a merge like any other check.
+  e2e:
+    name: Playwright e2e (auth core journeys)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    services:
+      # Real Postgres for this job only — build-and-test above never
+      # connects to a database, but the e2e suite exercises actual sign-up/
+      # sign-in/reset/export/delete flows against real rows.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
-      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
-      DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/e2e"
+      DIRECT_URL: "postgresql://postgres:postgres@localhost:5432/e2e"
       NODE_ENV: "test"
       APP_URL: "http://localhost:3000"
+      # Placeholder only — see the build-and-test job's env block comment.
+      BETTER_AUTH_SECRET: "ci-placeholder-secret-not-real-min-32-chars"
+      # File transport so e2e/helpers/mail.ts can read a real reset/verify
+      # link from .mail-outbox/ without a Resend account. Also set directly
+      # on playwright.config.ts's webServer.env (belt-and-suspenders — that
+      # one wins if this job env and the config ever disagree).
+      MAIL_TRANSPORT: "file"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,5 +115,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run e2e smoke
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Run e2e
         run: npm run test:e2e
