@@ -32,6 +32,9 @@ coverage/
 /playwright/.cache/
 blob-report/
 
+# Dev/test transactional-email capture directory (MAIL_TRANSPORT=file)
+.mail-outbox/
+
 # Editor/OS
 .DS_Store
 Thumbs.db
