@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth/client";
 import { signInSchema } from "@/lib/validation/account";
+import { resolveSafeRedirect } from "@/lib/auth/safe-redirect";
 import { FormField } from "@/components/ui/form-field";
 
 type FieldErrors = Partial<Record<"email" | "password", string>>;
@@ -52,7 +53,7 @@ export function SignInForm() {
     }
 
     const next = searchParams.get("next");
-    router.push(next && next.startsWith("/") ? next : "/dashboard");
+    router.push(resolveSafeRedirect(next));
     router.refresh();
   }
 
