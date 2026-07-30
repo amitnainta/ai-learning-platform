@@ -141,4 +141,78 @@ describe("buildAuthOptions", () => {
     const options = buildAuthOptions();
     expect(options.user?.additionalFields?.minimumAgeAcknowledgedAt).toBeDefined();
   });
+
+  // REVIEW.md C2: server-side enforcement of the age acknowledgment and
+  // name validation, so a direct POST /api/auth/sign-up/email can't bypass
+  // what the browser-only signUpSchema/sign-up-form.tsx enforce.
+  describe("databaseHooks.user.create.before (C2 - server-side sign-up validation)", () => {
+    async function getBeforeHook() {
+      const { buildAuthOptions } = await import("../options");
+      const options = buildAuthOptions();
+      const before = options.databaseHooks?.user?.create?.before;
+      if (!before) {
+        throw new Error("databaseHooks.user.create.before is not defined");
+      }
+      return before;
+    }
+
+    // Base shape of the `user` row the hook receives, matching what
+    // Better Auth's internal adapter passes to `databaseHooks.user.create.before`.
+    function baseUser(overrides: Record<string, unknown>) {
+      return {
+        id: "test-user-id",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        email: "ada@example.com",
+        emailVerified: false,
+        name: "Ada Lovelace",
+        ...overrides,
+      };
+    }
+
+    it("rejects user creation with no minimumAgeAcknowledgedAt", async () => {
+      const before = await getBeforeHook();
+      await expect(
+        before(baseUser({ minimumAgeAcknowledgedAt: undefined }), null),
+      ).rejects.toMatchObject({ status: "BAD_REQUEST" });
+    });
+
+    it("rejects user creation with a falsy minimumAgeAcknowledgedAt (null)", async () => {
+      const before = await getBeforeHook();
+      await expect(
+        before(baseUser({ minimumAgeAcknowledgedAt: null }), null),
+      ).rejects.toMatchObject({ status: "BAD_REQUEST" });
+    });
+
+    it("ignores a client-supplied timestamp and stamps its own when truthy", async () => {
+      const before = await getBeforeHook();
+      const backdated = new Date("2000-01-01T00:00:00.000Z");
+      const startedAt = Date.now();
+      const result = (await before(baseUser({ minimumAgeAcknowledgedAt: backdated }), null)) as {
+        data: { minimumAgeAcknowledgedAt: Date };
+      };
+      const finishedAt = Date.now();
+      expect(result.data.minimumAgeAcknowledgedAt).not.toEqual(backdated);
+      expect(result.data.minimumAgeAcknowledgedAt.getTime()).toBeGreaterThanOrEqual(startedAt);
+      expect(result.data.minimumAgeAcknowledgedAt.getTime()).toBeLessThanOrEqual(finishedAt);
+    });
+
+    it("rejects a name over the 100-character cap", async () => {
+      const before = await getBeforeHook();
+      const longName = "a".repeat(300);
+      await expect(
+        before(baseUser({ name: longName, minimumAgeAcknowledgedAt: new Date() }), null),
+      ).rejects.toMatchObject({ status: "BAD_REQUEST" });
+    });
+
+    it("trims whitespace and strips control characters from the name, matching signUpSchema", async () => {
+      const before = await getBeforeHook();
+      const nameWithControlChar = `  Ada${String.fromCodePoint(0)}Lovelace  `;
+      const result = (await before(
+        baseUser({ name: nameWithControlChar, minimumAgeAcknowledgedAt: new Date() }),
+        null,
+      )) as { data: { name: string } };
+      expect(result.data.name).toBe("AdaLovelace");
+    });
+  });
 });

@@ -26,7 +26,13 @@ function stripControlCharacters(value: string): string {
     .join("");
 }
 
-const nameSchema = z
+// Exported so server-side call sites that don't go through `signUpSchema`
+// wholesale (e.g. the Better Auth `databaseHooks.user.create.before` hook
+// in src/lib/auth/options.ts, which re-validates a direct
+// `POST /api/auth/sign-up/email` call — see REVIEW.md C2) can reuse the
+// exact same name normalization/length-cap/control-character-stripping
+// rules instead of duplicating them.
+export const nameSchema = z
   .string()
   .trim()
   .min(1, "Name is required")

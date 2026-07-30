@@ -52,6 +52,17 @@ export async function countActiveSessionsForEmail(email: string): Promise<number
   return prisma.session.count({ where: { userId: user.id } });
 }
 
+/**
+ * Counts `Verification` rows backfilled with the given `userId` (REVIEW.md
+ * C3 — `databaseHooks.verification.create.before` in
+ * src/lib/auth/options.ts stamps this from the password-reset flow's
+ * `value` field). `userId` must be captured *before* deleting the account,
+ * since the row it refers to won't exist afterwards.
+ */
+export async function countVerificationRowsForUserId(userId: string): Promise<number> {
+  return prisma.verification.count({ where: { userId } });
+}
+
 export async function disconnectTestDb(): Promise<void> {
   await prisma.$disconnect();
 }

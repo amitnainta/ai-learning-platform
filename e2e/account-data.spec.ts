@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { uniqueTestEmail } from "./helpers/db";
+import { countVerificationRowsForUserId, findTestUserByEmail, uniqueTestEmail } from "./helpers/db";
 import { readLatestMailFor } from "./helpers/mail";
 import { registerAndOnboard } from "./helpers/register";
 
@@ -56,5 +56,45 @@ test.describe("account data export and deletion", () => {
     // A deletion confirmation email landed in the outbox.
     const message = await readLatestMailFor(email);
     expect(message.subject).toMatch(/account has been deleted/i);
+  });
+
+  // REVIEW.md C3: Verification rows (e.g. a password-reset token) must be
+  // gone once the account is deleted, not left orphaned.
+  test("deleting the account also removes its Verification rows", async ({ page }) => {
+    const email = uniqueTestEmail("verify-cascade");
+    await registerAndOnboard(page.request, {
+      email,
+      password: PASSWORD,
+      name: "Cascade User",
+    });
+
+    // Create a real Verification row for this user (identifier
+    // `reset-password:<token>`, backfilled `userId`) via the actual
+    // forgot-password flow, the same one auth-password-reset.spec.ts uses.
+    await page.goto("/forgot-password");
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: /send reset link/i }).click();
+    await expect(page.getByRole("status")).toContainText(/if an account exists/i);
+
+    const userBeforeDeletion = await findTestUserByEmail(email);
+    expect(userBeforeDeletion).not.toBeNull();
+    const userId = userBeforeDeletion!.id;
+
+    await expect
+      .poll(() => countVerificationRowsForUserId(userId), {
+        message: "expected the password-reset request to create a backfilled Verification row",
+      })
+      .toBeGreaterThan(0);
+
+    await page.goto("/account");
+    const deleteButton = page.getByRole("button", {
+      name: /permanently delete my account/i,
+    });
+    await page.getByLabel(new RegExp(`Type ${email}`, "i")).fill(email);
+    await expect(deleteButton).toBeEnabled();
+    await deleteButton.click();
+    await expect(page).toHaveURL(/\/account-deleted$/);
+
+    expect(await countVerificationRowsForUserId(userId)).toBe(0);
   });
 });

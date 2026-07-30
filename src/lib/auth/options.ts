@@ -1,4 +1,4 @@
-import type { BetterAuthOptions } from "better-auth";
+import { APIError, type BetterAuthOptions } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "../prisma";
 import { getEnv } from "../env";
@@ -7,6 +7,7 @@ import { sendMail } from "../mail/mailer";
 import { resetPasswordTemplate, verifyEmailTemplate } from "../mail/templates";
 import { AUTH_COOKIE_PREFIX } from "./constants";
 import { revokeAllSessions } from "./revoke-sessions";
+import { nameSchema } from "../validation/account";
 
 /**
  * Plain Better Auth options object (decision #3, #4, #5, #6, #7, #8, #10 in
@@ -109,6 +110,90 @@ export function buildAuthOptions() {
           type: "date",
           required: false,
           input: true,
+        },
+      },
+    },
+
+    // C3 (REVIEW.md): declared so the Prisma adapter's field-by-field
+    // input transform (which only ever forwards fields it knows about)
+    // actually writes `userId` to the database — see the
+    // `databaseHooks.verification.create.before` hook below, and the
+    // `Verification.userId` column comment in prisma/schema.prisma for
+    // why this is safe/accurate for every verification row this app
+    // creates. `input: false` because it's never client-suppliable —
+    // only the hook below derives and sets it.
+    verification: {
+      additionalFields: {
+        userId: {
+          type: "string",
+          required: false,
+          input: false,
+        },
+      },
+    },
+
+    // C2 (REVIEW.md): `minimumAgeAcknowledgedAt` is a Better Auth
+    // `user.additionalFields` entry with `input: true`, and `name` is only
+    // validated/normalized by `signUpSchema` in the browser — both are
+    // trivially bypassed by calling `POST /api/auth/sign-up/email`
+    // directly. This hook is the server-side enforcement point for both,
+    // reusing the exact validation rules `signUpSchema` already applies
+    // client-side (src/lib/validation/account.ts) rather than duplicating
+    // them. It fires for every `user` row creation — today that's only the
+    // credential sign-up path, since no OAuth provider is configured
+    // (PLAN.md decision #3, FR-ACC-009 out of scope) — so a future SSO
+    // work item should revisit whether the age-acknowledgment requirement
+    // still applies to an OAuth-created user.
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user, _context) => {
+            // NFR-SEC-011: require a truthy acknowledgment in the
+            // request, then stamp the timestamp ourselves — never trust
+            // a client-supplied `minimumAgeAcknowledgedAt` value, which
+            // could be omitted, null, or backdated/arbitrary.
+            if (!user.minimumAgeAcknowledgedAt) {
+              throw new APIError("BAD_REQUEST", {
+                code: "MINIMUM_AGE_NOT_ACKNOWLEDGED",
+                message: "You must confirm you meet the minimum age requirement to register.",
+              });
+            }
+
+            // NFR-SEC-007: re-run the same name normalization/length-cap/
+            // control-character-stripping `signUpSchema` already applies
+            // client-side.
+            const nameResult = nameSchema.safeParse(user.name);
+            if (!nameResult.success) {
+              throw new APIError("BAD_REQUEST", {
+                code: "INVALID_NAME",
+                message: nameResult.error.issues[0]?.message ?? "Invalid name.",
+              });
+            }
+
+            return {
+              data: {
+                name: nameResult.data,
+                minimumAgeAcknowledgedAt: new Date(),
+              },
+            };
+          },
+        },
+      },
+      // C3 (REVIEW.md): backfills `Verification.userId` so the real
+      // FK-level `onDelete: Cascade` (prisma/schema.prisma) actually
+      // fires when the owning User is deleted, instead of leaving these
+      // rows orphaned. Only the password-reset flow creates a row here
+      // with this app's config — `value` is the target user's id for
+      // that flow (see the schema comment for the verified source
+      // reference) — so anything else is left with a null `userId`
+      // rather than guessed at.
+      verification: {
+        create: {
+          before: async (verification) => {
+            if (verification.identifier.startsWith("reset-password:")) {
+              return { data: { userId: verification.value } };
+            }
+          },
         },
       },
     },

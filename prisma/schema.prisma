@@ -58,8 +58,9 @@ model User {
   onboardingCompletedAt    DateTime?
   minimumAgeAcknowledgedAt DateTime?
 
-  sessions Session[]
-  accounts Account[]
+  sessions      Session[]
+  accounts      Account[]
+  verifications Verification[]
 
   @@unique([email])
   @@index([createdAt])
@@ -115,7 +116,23 @@ model Verification {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // Better Auth's own `Verification` schema has no `userId` concept (see
+  // node_modules/@better-auth/core/src/db/schema/verification.ts) — the
+  // library only ever writes the target user's id into `value` for the
+  // one flow this app uses that creates a row here (password reset;
+  // `identifier` is `reset-password:<token>`, `value` is the userId — see
+  // node_modules/better-auth/dist/api/routes/password.mjs). Email
+  // verification tokens are signed JWTs and never hit this table, so
+  // `userId` stays null for anything else. `databaseHooks.verification
+  // .create.before` (src/lib/auth/options.ts) backfills this column from
+  // `value` at write time so a real FK-level cascade (rather than a
+  // best-effort cleanup query) removes these rows when the owning User is
+  // deleted (REVIEW.md C3 — previously orphaned on account deletion).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([identifier])
+  @@index([userId])
   @@map("verification")
 }
 

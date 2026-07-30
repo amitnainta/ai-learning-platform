@@ -50,6 +50,54 @@ test.describe("registration and placement", () => {
     expect(user).toBeNull();
   });
 
+  // REVIEW.md C2: the age-acknowledgment gate must be enforced server-side,
+  // not only by signUpSchema in the browser — a direct API call bypasses
+  // the sign-up form entirely.
+  test("rejects a direct API sign-up with no minimum-age acknowledgment (C2)", async ({
+    request,
+  }) => {
+    const email = uniqueTestEmail("api-no-ack");
+
+    const response = await request.post("/api/auth/sign-up/email", {
+      data: {
+        name: "Direct API User",
+        email,
+        password: PASSWORD,
+        // Deliberately omitted: minimumAgeAcknowledgedAt.
+      },
+    });
+
+    expect(response.status()).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("MINIMUM_AGE_NOT_ACKNOWLEDGED");
+
+    const user = await findTestUserByEmail(email);
+    expect(user).toBeNull();
+  });
+
+  // REVIEW.md C2: the 100-char name cap must also be enforced server-side.
+  test("rejects a direct API sign-up with a name over the 100-character cap (C2)", async ({
+    request,
+  }) => {
+    const email = uniqueTestEmail("api-long-name");
+
+    const response = await request.post("/api/auth/sign-up/email", {
+      data: {
+        name: "a".repeat(300),
+        email,
+        password: PASSWORD,
+        minimumAgeAcknowledgedAt: new Date().toISOString(),
+      },
+    });
+
+    expect(response.status()).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("INVALID_NAME");
+
+    const user = await findTestUserByEmail(email);
+    expect(user).toBeNull();
+  });
+
   test("a display name containing a script tag renders as literal text (NFR-SEC-007)", async ({
     page,
   }) => {
