@@ -101,7 +101,18 @@ async function loadMarkdownCollection<T>(
       continue;
     }
 
-    const candidate = { ...parsed.value.data, body: parsed.value.body.trim() };
+    // Only attach a `body` key when the file actually has body content.
+    // CURATED content items use a `.strict()` Zod branch with no `body`
+    // field at all (decision #1 / task 6: "forbids body") — always
+    // attaching `body: ""` would make every curated file fail validation
+    // with an "unrecognized key" error. ORIGINAL items, role profiles, and
+    // glossary terms all require a non-empty body regardless, so omitting
+    // the key on an empty body still surfaces as a clear "required" error.
+    const trimmedBody = parsed.value.body.trim();
+    const candidate =
+      trimmedBody.length > 0
+        ? { ...parsed.value.data, body: trimmedBody }
+        : { ...parsed.value.data };
     const result = schema.safeParse(candidate);
     if (!result.success) {
       for (const issue of result.error.issues) {

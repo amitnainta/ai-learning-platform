@@ -1,0 +1,18 @@
+slug: technical-builder-zero-knowledge
+role: TECHNICAL_BUILDER
+level: ZERO_KNOWLEDGE
+title: Technical Builder — Zero Knowledge
+summary: Start here if you're a developer or engineer with no prior AI/ML background.
+status: PUBLISHED
+description: |
+  This is the starting point for engineers and technical practitioners who
+  are new to AI and machine learning. You'll leave this level able to
+  explain, in plain language, what machine learning actually is and how a
+  model learns from data — the foundation everything else in this path
+  builds on.
+
+  Two short courses: what AI is and isn't, and how machine learning
+  actually works under the hood.
+courses:
+  - ai-foundations-for-builders
+  - getting-started-with-machine-learning

@@ -1,0 +1,9 @@
+# Technical Builder — Intermediate, course 1 of 2.
+slug: practical-deep-learning
+title: Practical Deep Learning
+summary: How large language models work under the hood, and the neural-network fundamentals behind them.
+status: PUBLISHED
+items:
+  - understanding-large-language-models
+  - deeplearning-ai-short-course
+  - 3blue1brown-neural-networks
