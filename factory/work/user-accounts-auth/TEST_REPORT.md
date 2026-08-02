@@ -6,6 +6,281 @@ using the pre-existing `.env.local`), not taken on the builder's word. Where a
 builder claim didn't hold up on first try, the investigation and resolution are
 documented inline.
 
+**This report has two parts**: the original full-suite verification (below,
+unchanged from the first pass — 16/18 ACs fully closed, C1/C2/C3 open per
+REVIEW.md), and a **C1/C2/C3 re-verification addendum** (top of file, added
+after the fix pass on commits `836d33d`/`92332b5`) covering the three
+review-blocking findings with fresh, independent evidence.
+
+## RE-VERIFICATION ADDENDUM (fix pass for REVIEW.md C1/C2/C3)
+
+Re-run independently on 2026-07-30/31, on commits `836d33d` (C1),
+`92332b5` (C2/C3), `e513ba4`, `33ef838`. Every claim below is backed by a
+command I ran myself against a real local Postgres and a real running build of
+the app — not inferred from the builder's PLAN.md notes or REVIEW.md's own
+description of the fix.
+
+**Overall verdict: PASS.** All three review-blocking findings are genuinely
+closed. Full toolchain re-run clean, including the higher unit/e2e counts the
+builder claimed (87/87 Vitest, 15/15 Playwright — both independently
+reproduced, not taken on faith). No regressions found in the mechanisms
+previously verified (rate limiter, session cascade, password-reset session
+invalidation).
+
+### Environment note for this pass
+
+Docker Desktop would not come up on this machine in a reasonable time (the WSL2
+`docker-desktop` distro kept crash-looping — not a project defect, a local
+Docker Desktop/WSL2 issue). Rather than block on it, I used a real PostgreSQL 18
+server already present on this machine's Ubuntu WSL2 distro (started via
+`sudo service postgresql start`) and, for the parts of this task that needed a
+*running app process* (C2/C3's HTTP-level checks, the full Vitest/Playwright
+re-run, the rate-limiter regression check), installed Node 22 and ran
+`npm ci`/`next build`/`next start`/`playwright test` **inside that same WSL2
+distro** against `localhost:5432`, rather than across the Windows/WSL2 network
+boundary (which was itself flaky on this machine — see below). This is the same
+Postgres engine and Node major version as the previous pass, exercising the
+exact same committed code and `.env.local` — it is a different execution
+environment for me, not a different environment for the app under test.
+`npm ci` was re-run once more on the Windows side afterward to leave the
+working tree's `node_modules` in the Windows-native state; `git status` is
+clean (no tracked files touched, no stray files left).
+
+One genuine (environment-only) finding surfaced while doing this: WSL2's
+"automatic localhost forwarding" from Windows to a plain `localhost:5432`
+listener inside the distro was **intermittent** on this machine (raw TCP
+connects from Windows alternated between succeeding and `ECONNREFUSED` within
+seconds of each other, with no config change) — a local WSL2/Hyper-V networking
+quirk unrelated to this branch. Not a finding about the product; noted only so
+the "why WSL, not Docker or native Windows Postgres" choice in this pass is
+explained.
+
+### C1 — open redirect fix, independently verified
+
+**Read** `src/lib/auth/safe-redirect.ts` in full and `src/lib/auth/__tests__/safe-redirect.test.ts`
+in full (both reproduced above are exactly what's on the branch, not summarised
+from memory). The implementation strips ASCII tab/newline/CR first (mirroring
+WHATWG URL parsing), then rejects: not starting with a single `/`, starting with
+`//` or `/\`, or containing a `:` before the first `/`/`?`/`#`. `sign-in-form.tsx`
+calls `resolveSafeRedirect(next)` and passes only its return value to
+`router.push` — confirmed by reading the file; there is exactly one call site.
+
+**Then I attacked it directly**, not just by reading the tests. Since
+`isSafeRedirectPath`/`resolveSafeRedirect` are pure functions with zero
+`window`/DOM dependency, I executed the **actual shipped file** (via `tsx`, no
+reimplementation, no mocking) against the exact payloads named in the task,
+plus a tab-obfuscated variant and the legitimate-path case:
+
+```
+=== Attack payloads (must all fall back to /dashboard) ===
+"//evil.example"        -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+"/\\evil.example"       -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+"javascript:alert(1)"   -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+"/\t/evil.example"      -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+"/\n/evil.example"      -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+"https://evil.example"  -> resolveSafeRedirect: "/dashboard" | isSafeRedirectPath: false PASS
+
+=== Legitimate same-origin next (must be preserved) ===
+"/account"                -> resolveSafeRedirect: "/account" PASS
+"/onboarding"              -> resolveSafeRedirect: "/onboarding" PASS
+"/account?tab=profile"     -> resolveSafeRedirect: "/account?tab=profile" PASS
+
+OVERALL: ALL PASS
+```
+
+Every named attack (protocol-relative, backslash, `javascript:`, tab-obfuscated,
+newline-obfuscated, absolute-https) falls back to `/dashboard`; the legitimate
+`/account` case is preserved unchanged — confirming the fix is not
+over-aggressive. I did not additionally drive this through a live browser
+click-through: since the guard is a pure string function invoked exactly once
+(at the point `router.push` is called, after a successful credential submit)
+with no DOM/`window` dependency, executing the real shipped function directly
+against these payloads is equivalent evidence to a browser click-through for
+*this specific defect class* (the vulnerability was in the string-matching
+logic, not in how the browser resolves the resulting URL). The unit test file
+(`safe-redirect.test.ts`, 12 tests) covers the same cases and is part of the
+87/87 Vitest pass reported below.
+
+**C1 verdict: genuinely fixed. No open-redirect payload tested succeeds; the
+legitimate case still works.**
+
+### C2 — server-side sign-up validation, independently verified
+
+Started a real production build of the app and called
+`POST /api/auth/sign-up/email` directly with `curl` (bypassing the UI/React
+entirely), then queried the `User` table directly with `psql` after each call —
+five real HTTP round-trips against the real Better Auth handler, real Prisma,
+real Postgres:
+
+| # | Request body | Response | DB row created? |
+| --- | --- | --- | --- |
+| 1 | No `minimumAgeAcknowledgedAt` field at all | `400 {"code":"MINIMUM_AGE_NOT_ACKNOWLEDGED",...}` | **No** |
+| 2 | `minimumAgeAcknowledgedAt: null` | `400 {"code":"MINIMUM_AGE_NOT_ACKNOWLEDGED",...}` | **No** |
+| 3 | `minimumAgeAcknowledgedAt: "2000-01-01T00:00:00.000Z"` (backdated) | `200`, user created | **Yes — but** `psql` confirms the stored `minimumAgeAcknowledgedAt` is `2026-08-01 19:05:34.849`, i.e. the real server time at the moment of the call, **not** the backdated 2000 value the client sent. The hook ignores the client value and stamps its own, exactly as documented. |
+| 4 | 350-character name, valid age-ack | `400 {"code":"INVALID_NAME","message":"Name must be 100 characters or fewer"}` | **No** |
+| 5 | (happy path) valid name, valid email, age-ack `true` via a real timestamp | `200`, user created | **Yes**, with `name_len` correct (not truncated garbage) and a real, current timestamp |
+
+Direct DB query after all five calls (`SELECT email, "minimumAgeAcknowledgedAt", length(name) FROM "user" WHERE email IN (...)`)
+confirms exactly two rows exist — cases 3 and 5 — matching the table above.
+Cases 1, 2, and 4 left **zero** trace in the database, confirming rejection
+happens before any write, not as a post-hoc cleanup.
+
+This directly answers the task's fourth sub-question too: every rejection came
+back as a clean `400` with a well-formed JSON body (`{"code": ..., "message": ...}`)
+— never a `500` or an unhandled crash — confirming `APIError` thrown from inside
+`databaseHooks.user.create.before` is correctly translated into a proper HTTP
+error response by Better Auth's handler (`toNextJsHandler`), not swallowed or
+surfaced as a generic failure.
+
+**C2 verdict: genuinely fixed, both halves.** Age-acknowledgment is enforced
+and stamped server-side regardless of client input; the 100-char name cap is
+enforced server-side; and — importantly — the **happy path still works**: a
+legitimate direct-API sign-up with a truthful age-ack succeeds exactly as
+before. The fix is not over-broad.
+
+### C3 — Verification cascade, independently verified
+
+Against the same running build: registered a real user via the API, then
+called `POST /api/auth/request-password-reset` for that user's real address
+(the actual production password-reset flow, not a synthetic row insert).
+
+```
+=== 3) Query Verification row directly ===
+               identifier                |              userId              | user_id_matches
+-----------------------------------------+----------------------------------+-----------------
+ reset-password:4HGZfZiMXReI8SENJkVtgYHL | rgqAXuYz9fGplpVffRFMbL3PH8huko0D | t
+
+Verification rows for this user BEFORE deletion: 1
+```
+
+Confirms the `databaseHooks.verification.create.before` backfill genuinely
+fires for a real password-reset request and writes a `userId` that exactly
+matches the requesting user — not a null, not a mismatch.
+
+Then signed in as that user and called `DELETE /api/account` with the correct
+typed confirmation (the real deletion route, not a raw SQL delete):
+
+```
+=== 6) Confirm User row is gone ===
+ user_rows_remaining
+---------------------
+                   0
+
+=== 7) Confirm Verification rows for this userId are ACTUALLY gone (not just User) ===
+ verification_rows_remaining
+-----------------------------
+                           0
+```
+
+Both the `User` row and the `Verification` row it owned are gone after a
+single `DELETE /api/account` call — confirming the schema-level
+`onDelete: Cascade` (not an app-level cleanup query) is what removed it, per
+the fix's design.
+
+**Migration clean-apply check** (task instruction: "confirm this second
+migration applies cleanly to a fresh database state"): created a brand-new,
+completely empty Postgres database on the same server and ran
+`npx prisma migrate deploy` against it from a clean slate:
+
+```
+Applying migration `20260726191014_init_accounts`
+Applying migration `20260728050247_verification_user_cascade`
+All migrations have been successfully applied.
+--- migrate status ---
+Database schema is up to date!
+```
+
+Both migrations, in sequence, apply cleanly to an empty database — this is not
+just "up to date" against a database that already had them applied from prior
+dev work. Then inspected the resulting schema directly:
+
+```
+Foreign-key constraints:
+    "verification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"(id) ON UPDATE CASCADE ON DELETE CASCADE
+```
+
+Confirms the FK-level cascade exists exactly as `prisma/schema.prisma` and the
+migration SQL claim, independent of the app-level backfill hook.
+
+**C3 verdict: genuinely fixed.** A real password-reset-created row is
+genuinely removed when the owning account is deleted, verified by direct
+database inspection at every step (not inferred from HTTP response codes
+alone), and the migration that adds this is safe to apply to a fresh
+environment.
+
+### Sanity check: does the `databaseHooks.user.create.before` hook cover every sign-up path?
+
+Grepped the entire `src/` tree for `socialProviders`/OAuth/provider
+configuration: none exists. `src/lib/auth/options.ts` configures only
+`emailAndPassword`; there is no `socialProviders` block anywhere in the repo.
+Credential sign-up (`/sign-up/email`) is the only path that creates a `User`
+row today, and it is the only path the C2 test suite (and my manual curl
+tests above) exercised — confirmed accurate. The hook comment in
+`options.ts` itself flags that a future SSO work item must revisit whether the
+age-acknowledgment requirement still applies to an OAuth-created user, which is
+the correct scoping (not a gap in this fix).
+
+### Full toolchain re-run (fresh, this pass)
+
+| Check | Result |
+| --- | --- |
+| `npm ci` | Clean install, 603 packages |
+| `npm run lint` | Clean, exit 0 |
+| `npm run format:check` | Clean, no diff |
+| `npx tsc --noEmit` | Clean, no output |
+| `npm run build` | Succeeds |
+| `npm run test` (Vitest) | **87/87 passed, 9 test files** (up from 72/8 — the new `safe-redirect.test.ts` file plus the new `databaseHooks` describe block in `options.test.ts`, both independently read and confirmed non-tautological above) |
+| `npm run test:e2e` (Playwright, real Postgres) | **15/15 passed** (up from 12 — the two new direct-API C2 specs in `auth-registration.spec.ts` and the new C3 Verification-cascade spec in `account-data.spec.ts`, all three independently read and confirmed to assert real HTTP status codes / DB row counts, not tautologies) |
+
+Both counts match the builder's claim exactly and were reproduced by me
+running the actual commands, not copied from PLAN.md/REVIEW.md.
+
+### Regression check: previously-passing mechanisms re-verified after the fix pass
+
+**Rate limiter (AC6)** — re-run with `E2E_DISABLE_RATE_LIMIT` unset against a
+real running build:
+
+```
+Attempt 1-5: HTTP 401 (invalid credentials, as expected)
+Attempt 6:   HTTP 429
+Attempt 7:   HTTP 429
+Different IP: HTTP 401 (unaffected)
+
+RateLimit table: 203.0.113.77|/sign-in/email -> count 5; 198.51.100.42|/sign-in/email -> count 1
+
+Killed the process, started a fresh one (new PID), same IP:
+First request after restart: HTTP 429 (proves DB-backed, not in-memory)
+```
+
+Identical behaviour to the original pass — no regression from the C1/C2/C3
+fix commits.
+
+**Session cascade (Session/Account) and password-reset session invalidation**
+— re-verified by re-running the actual committed e2e specs rather than
+redoing the manual curl checks from scratch: `e2e/account-data.spec.ts`'s
+original export/delete test (Session+Account cascade, unchanged assertions)
+and `e2e/auth-password-reset.spec.ts` (a pre-reset session dies) both passed
+cleanly as part of the 15/15 run above — the exact same test bodies that
+passed in the original TEST_REPORT run, now passing again against the
+post-fix code. No regression.
+
+### What I did not additionally re-do
+
+Everything else in the "Acceptance criteria — verified individually" table
+below (email verification link flow, export payload shape, XSS/script-tag
+rendering, responsive/keyboard manual checks, docs) was not independently
+re-executed a second time in this pass, since none of it is touched by the
+C1/C2/C3 fix commits (confirmed by reading the diff: `git show --stat` for
+`836d33d`/`92332b5` touches only `safe-redirect.ts`, `safe-redirect.test.ts`,
+`sign-in-form.tsx`, `options.ts`, `options.test.ts`, `schema.prisma`, the new
+migration, `account-data.spec.ts`, `auth-registration.spec.ts`,
+`e2e/helpers/db.ts`) and all of it is still exercised by the same 87/87 and
+15/15 passing suites above.
+
+---
+
+## ORIGINAL VERIFICATION PASS (pre-fix; C1/C2/C3 findings below reflect REVIEW.md, not yet fixed at the time this section was written)
+
 ## Overall verdict: PASS
 
 All 18 acceptance criteria are met. Full automated suite is green (72/72 Vitest,
@@ -17,6 +292,11 @@ what the automated suite covers and both behaved correctly. No defects found in
 committed code. Two non-blocking observations are flagged below (not acceptance
 criteria failures): a narrow server-side input-validation gap, and the absence of
 a defense-in-depth `NODE_ENV` guard around the e2e rate-limit override.
+
+**Note (superseded by the addendum above):** the "narrow server-side
+input-validation gap" flagged at the end of this original pass is exactly what
+REVIEW.md's C1/C2/C3 findings formalised as blocking, and what the addendum
+above confirms is now fixed.
 
 ## Environment notes (read before the results below)
 

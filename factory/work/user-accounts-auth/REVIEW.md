@@ -1,12 +1,308 @@
 # REVIEW — user-accounts-auth
 
+Second (final) review pass, after the C1/C2/C3 fix pass (commits `836d33d`,
+`92332b5`, `e513ba4`, `33ef838`) and the tester's re-verification addendum.
+
+I did not take the builder's or the tester's word for the closures. I read
+`src/lib/auth/safe-redirect.ts`, the `databaseHooks` block in
+`src/lib/auth/options.ts`, the migration SQL and the schema diff myself; I
+executed the shipped safe-redirect module against my own adversarial payload
+list (including cases the tester did not try); and I verified the two
+library-behaviour claims that the whole of C2 and C3 rest on directly in
+`node_modules/better-auth@1.6.25` source, rather than inferring them from
+observed HTTP responses.
+
+## Verdict: APPROVED WITH NOTES
+
+**Is this auth system safe to ship? Yes.** C1, C2 and C3 are genuinely closed,
+by mechanisms that are correct for the right reasons rather than
+coincidentally-passing tests. I would be comfortable putting my name on merging
+this to `main`.
+
+Two of the previously-recorded non-blocking follow-ups (F1 and F4) are
+deployment-time risks rather than merge-time risks. They do not block this
+merge, but they **must be closed before the first production deploy that serves
+real users** — see "Follow-ups" below, where they are re-stated with that
+sharper condition.
+
+Independently re-run on my side: `npx tsc --noEmit` clean, `npm run lint`
+clean, `npx vitest run` **87/87 passed across 9 files** (matches the tester's
+count, reproduced first-hand).
+
+---
+
+## C1 — open redirect: CLOSED
+
+`src/components/auth/sign-in-form.tsx:56` now calls `resolveSafeRedirect(next)`
+and passes only its return value to `router.push`.
+
+**The logic is sound, and I checked the reasoning rather than the test list.**
+`isSafeRedirectPath` strips exactly the three characters WHATWG URL parsing
+removes (tab, LF, CR), then requires the result to start with a single slash and
+rejects a leading double slash or a leading slash-backslash. That is the correct
+invariant: after tab/LF/CR removal, a value beginning with one slash and not
+followed by a slash or a backslash cannot resolve to another origin, and every
+other shape fails closed.
+
+**I attacked it myself**, executing the real shipped module (Node type
+stripping, no reimplementation, no mocking) against 25 payloads — the tester's
+six plus cases chosen specifically to probe the gaps this re-review was asked
+about:
+
+- leading whitespace before the slash — rejected
+- leading NUL and leading tab, i.e. characters a browser trims or strips
+  *before* resolution — rejected
+- triple slash, and interleaved tab/newline obfuscation — rejected
+- every backslash variant, verified with character-code-constructed strings so
+  there is no shell/JS escaping ambiguity: leading slash-backslash,
+  slash-double-backslash, slash-backslash-slash all rejected; a mid-path
+  backslash correctly still accepted
+- unicode lookalike slashes U+2044 (fraction slash), U+FF0F (fullwidth
+  solidus), plus U+2028 and U+0085 — correctly **accepted**, because none of
+  them are path separators to a URL parser; these stay same-origin paths and
+  rejecting them would be wrong
+- percent-encoded slash and percent-encoded tab — correctly accepted
+  (same-origin)
+- extremely long inputs: a 200k-character path and a 100k-tab obfuscated
+  payload — handled correctly and fast; both regexes are linear with no
+  backtracking risk
+
+No bypass found. The legitimate cases (`/account`, `/account?tab=profile`,
+`/onboarding#step-2`, `/`) are preserved unchanged, so the fix is not
+over-aggressive either.
+
+**I also re-checked the blast radius, not just the function.** Grepping every
+`searchParams` / `router.push` / `redirect(` / `callbackURL` / `redirectTo`
+site in `src/`: `sign-in-form.tsx:56` is the only place in the entire app that
+reads an attacker-suppliable redirect value.
+`src/components/auth/forgot-password-form.tsx:34` hard-codes
+`redirectTo: "/reset-password"`; `src/middleware.ts:44` and
+`src/lib/auth/session.ts:61` only ever *write* `next`, from an internal
+pathname; every other `router.push` takes a string literal. One guarded call
+site is therefore complete coverage.
+
+Two cosmetic notes, neither a defect — see F10 and F11.
+
+## C2 — server-side sign-up validation: CLOSED
+
+The `databaseHooks.user.create.before` hook in `src/lib/auth/options.ts:147-181`
+rejects a falsy `minimumAgeAcknowledgedAt`, stamps its own `new Date()` instead
+of trusting the client's value, and re-validates `name` through the now-exported
+`nameSchema`.
+
+The re-review asked me to verify **structurally** — not from the tester's "no DB
+row" observation, which could in principle have another explanation — that
+throwing an `APIError` from a `before` hook actually prevents the write. It
+does, and here is the mechanism.
+
+In `node_modules/better-auth/dist/db/with-hooks.mjs`, `createWithHooks` runs
+every registered `create.before` hook (lines 9-23) and only then calls
+`adapter.create` (line 25). A throw inside the hook propagates out of
+`createWithHooks` before any adapter call is made. The absence of a row is
+therefore structural: there is no write-then-rollback, and no window in which a
+partial row exists.
+
+The same file settles the second thing the fix silently depends on: a hook's
+return value is **merged**, not substituted —
+`actualData = { ...actualData, ...result.data }` (lines 18-21). Returning only
+`{ name, minimumAgeAcknowledgedAt }` therefore augments the row rather than
+wiping `id`/`email`/timestamps. That is why the happy path still produces a
+complete user, and it is worth having verified rather than assumed.
+
+**Coverage of every entry point**, also checked in source rather than assumed:
+`node_modules/better-auth/dist/db/internal-adapter.mjs` creates `user` rows in
+exactly two places — `createUser` (line 79) and `createOAuthUser` (line 61) —
+and both route through `createWithHooks(..., "user")`. The hook therefore covers
+the credential path *and* any future OAuth path. For OAuth it would fail closed
+with a 400 rather than silently admitting an unacknowledged account, which is
+the right default, and the code comment already tells a future SSO work item to
+revisit it. No admin plugin is installed. I also grepped `src/`, `prisma/` and
+`e2e/` for a direct `prisma.user.create`/`upsert`: there are none, so no
+application code bypasses the hook either.
+
+One honest limitation, which I accept: the gate is a truthiness check, so any
+truthy value satisfies it. That is semantically identical to a user ticking the
+checkbox, and since the server discards the submitted value and stamps its own
+timestamp, the guarantee C2 actually demanded — *every account carries a
+server-recorded acknowledgment* — now holds unconditionally. That closes it.
+
+The two new direct-API specs in `e2e/auth-registration.spec.ts` assert real HTTP
+400s, real error codes, and a null DB lookup afterwards; the five new unit tests
+call the real hook and assert a backdated client timestamp is replaced by one
+inside the call window. Neither is tautological.
+
+## C3 — Verification cascade: CLOSED
+
+`prisma/migrations/20260728050247_verification_user_cascade/migration.sql` adds
+a nullable `userId`, an index on it, and a genuine
+`ON DELETE CASCADE ON UPDATE CASCADE` foreign key. That is a database-level
+guarantee, which is strictly better than the app-level `deleteMany` cleanup I
+offered as the cheaper option in the first review. The e2e spec proves the round
+trip non-tautologically: it polls for a backfilled row to *exist* first (so it
+cannot pass by the row never being created) and only then asserts zero after
+deletion.
+
+**On whether the `reset-password:` prefix is correct and complete** — the
+question this re-review specifically posed. I enumerated every
+`createVerificationValue` call site in better-auth 1.6.25 myself. The core
+(non-plugin) ones are:
+
+- `dist/api/routes/password.mjs:75` — `identifier: "reset-password:<token>"`,
+  `value: user.user.id`. Exactly the shape the hook assumes, confirmed at the
+  source line rather than inferred from behaviour.
+- `dist/api/routes/update-user.mjs:313` — `delete-account-<token>`, written only
+  when `user.deleteUser.sendDeleteAccountVerification` is configured. It is not,
+  and such a row would be moot anyway since it immediately precedes a deletion.
+- `dist/state.mjs:65` — OAuth `state` storage; `identifier` is the random state
+  and `value` is a JSON blob, not a user id. Only reachable with a social
+  provider configured (none is). A null `userId` is the *correct* outcome for
+  those rows — they are not user-owned, so there is nothing to cascade.
+
+Everything else is plugin-only (email-otp, magic-link, phone-number, two-factor,
+oidc-provider, mcp, one-time-token, siwe) and no plugins are installed. I also
+confirmed the builder's load-bearing claim that email verification and
+change-email use `createEmailVerificationToken` (a signed token —
+`update-user.mjs:491,505`) and never write to this table at all.
+
+I additionally checked a failure mode nobody tested, because the hook returns
+`undefined` for non-matching identifiers and that branch is currently
+unreachable in this app: `with-hooks.mjs:18` guards with
+`typeof result === "object" && "data" in result`, so an `undefined` return is
+safely ignored. It will not break the first time a future flow does hit it.
+
+**The mechanism is fragile in a way worth recording** — see F12. It is a
+string-prefix allowlist coupled to library-internal identifier formats, and it
+fails *silently*: if 2FA, email-OTP, phone-number, magic-link or
+`sendDeleteAccountVerification` is ever enabled, those rows will be written with
+`userId = null` and orphan again on deletion, with no test going red. Those
+features are out of scope per PLAN.md, so this does not block — but it is a trap
+laid for the next work item, and the suggested hardening in F12 is cheap.
+
+Two smaller notes: any `Verification` rows written before this migration keep
+`userId = null` and would still orphan (moot — this app has never been
+deployed), and the new FK introduces a nanosecond-wide race where a
+`/request-password-reset` insert could fail if the target user is deleted
+between the lookup and the insert. Both are negligible; recorded for honesty,
+not for action.
+
+---
+
+## Scope and regressions in the fix pass — clean
+
+`git diff 79b845d..HEAD` is 15 files. Excluding factory artifacts (PLAN.md
+builder notes 7-9, REVIEW.md, TEST_REPORT.md), every change maps to C1, C2 or C3
+or their tests: `safe-redirect.ts` plus its test, one line in
+`sign-in-form.tsx`, the `databaseHooks`/`verification` blocks in `options.ts`
+plus their tests, the `nameSchema` export, the schema/migration pair, and three
+new specs plus one e2e helper. No product feature was touched, no
+previously-settled decision was reopened, no dependency was added or bumped, and
+no test was weakened or deleted.
+
+The only change outside that set is `.gitignore` gaining `*.tsbuildinfo` —
+housekeeping for an untracked build artifact, not scope creep worth objecting
+to.
+
+Nothing previously verified regressed: tsc, lint and 87/87 unit tests are green
+on my own run, and the tester independently re-ran the full 15/15 Playwright
+suite including the pre-existing rate-limiter, Session/Account cascade and
+password-reset session-revocation checks.
+
+The documentation inconsistency I raised as part of C3 is resolved by the fix
+rather than by editing the docs down: `docs/architecture/auth.md:257` and
+`e2e/helpers/db.ts:32` claim a Session/Account/Verification cascade, and that
+claim is now true.
+
+---
+
+## Follow-ups (none blocking this merge)
+
+Restated from the first review with a current status, plus four new minor items
+from this pass. **F1 and F4 are the two I would not let reach real users**; the
+rest are genuinely fine to track separately post-ship.
+
+- **F1 — the `x-forwarded-for` trust model is still unverified for the deployed
+  environment.** Unchanged by the fix pass and still the highest-value item.
+  Two failure modes: a client-supplied header trusted verbatim (the NFR-SEC-005
+  limiter becomes bypassable by rotating the header), or a multi-hop header
+  resolving to the literal key `no-trusted-ip`, which collapses "5 sign-ins per
+  15 min per IP" into one global bucket anyone can use to lock out the whole
+  platform. **Condition: close before the first production deploy with real
+  users** — confirm the resolved rate-limit key on the deployed host and set
+  `trustedProxies` if needed. Add it to
+  `docs/runbooks/provisioning-checklist.md`.
+- **F4 — the console mail transport logs live password-reset links, and
+  production silently falls back to it** when `RESEND_API_KEY` is unset.
+  Unchanged. **Condition: close before the first production deploy** — either
+  refuse the `console` transport when the resolved `APP_URL` is not localhost,
+  or redact the URL in that transport. The graceful-degradation choice is right
+  for dev and wrong for prod.
+- **F5 — the cookie `secure` flag is implicit and untested.** Unchanged. Set
+  `useSecureCookies` explicitly from the `APP_URL` protocol, or assert in
+  `getEnv()` that a non-localhost `APP_URL` is https.
+- **F3 — three files still claim `E2E_DISABLE_RATE_LIMIT` is set in
+  `.github/workflows/ci.yml`.** Re-checked this pass and still false:
+  `docs/architecture/auth.md:135-137`, `src/lib/auth/options.ts:48-49` and
+  `src/lib/env.ts:55-56` all say it; the CI e2e job env block does not set it —
+  only `playwright.config.ts:59` does. Harmless, one-line doc fix.
+- **F7 — `requireUser()` inside route handlers 307s instead of returning 401
+  JSON**, so `delete-account-form.tsx` can observe `response.ok === true` after
+  a deletion that did not happen. Unchanged. Low impact, still worth fixing.
+- **F8 — AC12 (verification link plus dashboard banner) still has no
+  browser-level coverage.** Unchanged. Low cost given `e2e/helpers/mail.ts`
+  already exists.
+- **F9 — `src/app/(app)/account/page.tsx:18` still renders "(FR-ACC-006)" to
+  the end user.** Unchanged. Trivial copy fix.
+- **F2 and F6** (no environment guard on `E2E_DISABLE_RATE_LIMIT`; the
+  library-level sign-in timing oracle) stand as recorded — informational, no
+  action needed now.
+- **F10 (new, cosmetic) — the embedded-scheme check in `safe-redirect.ts` is
+  dead code.** Because the function has already required a leading slash,
+  `normalized.search(/[/?#]/)` is always 0 and the inspected prefix is always
+  the empty string, so the colon test can never fire. The comment does describe
+  it as belt-and-braces, but it reads as though it contributes. Keep it or drop
+  it — just do not let a future refactor rely on it.
+- **F11 (new, cosmetic) — `resolveSafeRedirect` judges the normalized value but
+  returns the raw one.** Not exploitable (re-inserting tab/LF/CR into an
+  already-same-origin path cannot make it off-origin, and the browser strips
+  them again), but returning the normalized value would remove an asymmetry a
+  future reader has to reason about.
+- **F12 (new) — the `Verification.userId` backfill is a silent-failure
+  allowlist.** Hardening for whichever work item next enables an
+  email-OTP/2FA/magic-link/delete-account-verification flow: assert that after
+  an account deletion there are zero `Verification` rows whose `value` equals
+  the deleted user id. That catches new row-creating flows regardless of their
+  identifier prefix, which the current prefix check cannot.
+- **F13 (new, trivial) — two stale details.** The header comment in
+  `src/app/api/account/route.ts:11-12` still says the delete "cascades
+  Session/Account rows" (it now also cascades Verification), and `nameSchema`
+  applies `.min(1)`/`.max(100)` *before* `stripControlCharacters`, so a name
+  consisting only of control characters validates and stores as an empty
+  string. Both pre-date the fix pass; neither is a security issue.
+
+## Acceptance criteria
+
+**18 of 18 met.** AC1 is now met as a server-side control, not only as a UI
+journey (C2). AC10 is now met in full including its `Verification` clause (C3).
+Everything else re-checked in the first pass against the diff still holds and
+was not touched by the fix commits.
+
+---
+
+## Appendix: first review pass (superseded)
+
+Kept verbatim for the record. Its verdict (CHANGES REQUESTED) and its C1/C2/C3
+findings are **superseded** by the pass above; the F-item detail below remains
+the fuller description of the follow-ups summarised here.
+
+### (original REVIEW.md body)
+
 Independent review stage. I read `PLAN.md` and `TEST_REPORT.md` in full, then
 reviewed the actual diff (`git diff main...HEAD`, 7 commits, 73 files) rather
 than the plan's description of it. Where a claim was load-bearing I checked it
 against the shipped code and, where the behaviour is library-owned, against
 `node_modules/better-auth`'s actual implementation.
 
-## Verdict: CHANGES REQUESTED
+#### Verdict (SUPERSEDED by the final verdict at the top of this file): CHANGES REQUESTED
 
 This is a strong, well-documented build — better than most auth work I would
 expect from a single pass. The architecture decisions are sound, the session
@@ -27,7 +323,7 @@ tracked. C3 is a correctness-of-record fix, cheap either way.
 
 ---
 
-## Must fix before ship (blocking)
+### Must fix before ship (blocking) — all three are now CLOSED; see the final verdict at the top of this file
 
 ### C1. Open redirect in the sign-in `next` parameter — `src/components/auth/sign-in-form.tsx:55`
 
