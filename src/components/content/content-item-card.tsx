@@ -24,11 +24,18 @@ export interface ContentItemCardData extends TaggedContentItem {
   attributionNote: string | null;
 }
 
+// `timeZone: "UTC"` is deliberate: `lastReviewedAt` is a date (the day an
+// item was last reviewed), stored as a UTC midnight timestamp. Formatting
+// it in the server/browser's local timezone would shift the displayed day
+// for any visitor west of UTC (e.g. a US-based visitor would see "May 31"
+// for a value stored as "2026-06-01T00:00:00Z"). Rendering in UTC keeps the
+// displayed date stable regardless of where the app runs or who's viewing.
 function formatReviewDate(date: Date): string {
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "UTC",
   }).format(date);
 }
 

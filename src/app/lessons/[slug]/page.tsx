@@ -15,11 +15,15 @@ interface LessonPageParams {
   slug: string;
 }
 
+// See the identical comment in src/components/content/content-item-card.tsx
+// — `timeZone: "UTC"` keeps the displayed review date stable regardless of
+// server/browser locale.
 function formatReviewDate(date: Date): string {
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "UTC",
   }).format(date);
 }
 
