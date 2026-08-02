@@ -33,8 +33,12 @@ test.describe("account profile", () => {
     await page.getByRole("button", { name: /sign in/i }).click();
 
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByText("ENGINEERING_LEADER")).toBeVisible();
-    await expect(page.getByText("ADVANCED")).toBeVisible();
+    // Exact match: the dashboard's <PathSwitcher> (learning-paths-content)
+    // also renders a "Advanced" <option> in its level <select>, which a
+    // non-exact (case-insensitive substring) match against "ADVANCED"
+    // would otherwise also resolve to.
+    await expect(page.getByText("ENGINEERING_LEADER", { exact: true })).toBeVisible();
+    await expect(page.getByText("ADVANCED", { exact: true })).toBeVisible();
 
     await page.goto("/account");
     await expect(page.getByRole("radio", { name: /Engineering leader/i })).toBeChecked();

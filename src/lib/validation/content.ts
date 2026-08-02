@@ -29,6 +29,28 @@ function stripControlCharacters(value: string): string {
     .join("");
 }
 
+// Tab (9), LF (10), and CR (13) are control characters too, but they are the
+// characters that give Markdown its block structure (blank lines between
+// paragraphs, ATX headings on their own line, list items). Stripping them
+// the way `stripControlCharacters` does for single-line fields would
+// silently collapse a multi-paragraph body into one run-on line — headings
+// and lists would stop parsing as Markdown at all, with no validation error
+// to catch it. This variant strips every other control/DEL character but
+// preserves those three.
+const PRESERVED_WHITESPACE_CONTROL_CODE_POINTS = new Set([9, 10, 13]);
+
+function stripControlCharactersPreservingNewlines(value: string): string {
+  return Array.from(value)
+    .filter((char) => {
+      const codePoint = char.codePointAt(0) ?? 0;
+      if (PRESERVED_WHITESPACE_CONTROL_CODE_POINTS.has(codePoint)) {
+        return true;
+      }
+      return codePoint > MAX_CONTROL_CODE_POINT && codePoint !== DELETE_CODE_POINT;
+    })
+    .join("");
+}
+
 function cleanText(maxLength: number, message?: string) {
   return z
     .string()
@@ -36,6 +58,17 @@ function cleanText(maxLength: number, message?: string) {
     .min(1, message ?? "This field is required")
     .max(maxLength, `Must be ${maxLength} characters or fewer`)
     .transform((value) => stripControlCharacters(value));
+}
+
+// For Markdown prose fields (item/role-profile/glossary bodies, course/path
+// descriptions) — see `stripControlCharactersPreservingNewlines` above.
+function cleanMultilineText(maxLength: number, message?: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, message ?? "This field is required")
+    .max(maxLength, `Must be ${maxLength} characters or fewer`)
+    .transform((value) => stripControlCharactersPreservingNewlines(value));
 }
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -90,7 +123,7 @@ export const roleProfileFrontmatterSchema = z.object({
   summary: cleanText(500),
   status: contentStatusSchema.default("PUBLISHED"),
   // The Markdown body (everything after the frontmatter block).
-  body: cleanText(20_000, "A role profile needs a non-empty body"),
+  body: cleanMultilineText(20_000, "A role profile needs a non-empty body"),
 });
 export type RoleProfileFrontmatter = z.infer<typeof roleProfileFrontmatterSchema>;
 
@@ -127,7 +160,7 @@ const originalContentItemSchema = contentItemBaseSchema
   .extend({
     sourceType: z.literal("ORIGINAL"),
     // The Markdown body (everything after the frontmatter block).
-    body: cleanText(50_000, "ORIGINAL items require a non-empty body"),
+    body: cleanMultilineText(50_000, "ORIGINAL items require a non-empty body"),
     video: videoBlockSchema.optional(),
   })
   .strict();
@@ -164,7 +197,7 @@ export const courseFileSchema = z.object({
   slug: slugSchema,
   title: cleanText(200),
   summary: cleanText(500),
-  description: cleanText(4000).optional(),
+  description: cleanMultilineText(4000).optional(),
   status: contentStatusSchema.default("PUBLISHED"),
   // Ordered content-item slugs — array order is the authored position
   // (PathCourse/CourseItem.position, decision #5).
@@ -180,7 +213,7 @@ export const pathFileSchema = z.object({
   level: proficiencyLevelSchema,
   title: cleanText(200),
   summary: cleanText(500),
-  description: cleanText(20_000, "A path needs a non-empty description"),
+  description: cleanMultilineText(20_000, "A path needs a non-empty description"),
   status: contentStatusSchema.default("PUBLISHED"),
   // Ordered course slugs — array order is the authored position.
   courses: z.array(slugSchema).min(1, "A path needs at least one course"),
@@ -199,6 +232,6 @@ export const glossaryFrontmatterSchema = z.object({
   status: contentStatusSchema.default("PUBLISHED"),
   // The Markdown body (everything after the frontmatter block) — the long
   // definition rendered on the term page.
-  body: cleanText(20_000, "A glossary term needs a non-empty body"),
+  body: cleanMultilineText(20_000, "A glossary term needs a non-empty body"),
 });
 export type GlossaryFrontmatter = z.infer<typeof glossaryFrontmatterSchema>;

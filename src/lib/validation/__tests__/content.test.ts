@@ -105,6 +105,16 @@ describe("contentItemFrontmatterSchema — ORIGINAL vs CURATED discriminated uni
     expect(result.success).toBe(false);
   });
 
+  it("preserves blank lines and multi-paragraph structure in an ORIGINAL item's body (regression: control-character stripping must not eat newlines)", () => {
+    const multilineBody = "First paragraph.\n\n## A Heading\n\n- a list item\n- another item\n";
+    const result = contentItemFrontmatterSchema.safeParse({ ...baseOriginal, body: multilineBody });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.sourceType === "ORIGINAL") {
+      expect(result.data.body).toContain("\n\n## A Heading\n\n");
+      expect(result.data.body).toContain("\n- a list item\n- another item");
+    }
+  });
+
   it("rejects an unknown format", () => {
     const result = contentItemFrontmatterSchema.safeParse({ ...baseOriginal, format: "MAGAZINE" });
     expect(result.success).toBe(false);

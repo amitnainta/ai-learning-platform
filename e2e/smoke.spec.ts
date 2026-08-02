@@ -9,6 +9,12 @@ test.describe("smoke", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /ai learning platform/i })).toBeVisible();
+    // Task 32 (learning-paths-content): the primary call to action links
+    // into the content surface, anonymously — no session required.
+    await expect(page.getByRole("link", { name: /browse learning paths/i })).toHaveAttribute(
+      "href",
+      "/paths",
+    );
     await expect(page.getByRole("link", { name: /get started/i })).toHaveAttribute(
       "href",
       "/sign-up",
@@ -18,6 +24,14 @@ test.describe("smoke", () => {
     // requiring a single unique match.
     await expect(page.locator('a[href="/sign-in"]').first()).toBeVisible();
     await expect(page.getByText(/browse without an account/i)).toBeVisible();
+
+    // Header nav — "Paths" and "Glossary" are visible to anonymous
+    // visitors too (FR-ACC-008).
+    await expect(page.getByRole("link", { name: /^paths$/i })).toHaveAttribute("href", "/paths");
+    await expect(page.getByRole("link", { name: /^glossary$/i })).toHaveAttribute(
+      "href",
+      "/glossary",
+    );
   });
 
   test("health endpoint returns 200", async ({ request }) => {
