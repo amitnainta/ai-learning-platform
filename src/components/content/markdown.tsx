@@ -1,5 +1,5 @@
 import Link from "next/link";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { GlossaryLink } from "@/components/content/glossary-link";
 import { ExternalLink } from "@/components/content/external-link";
@@ -138,6 +138,20 @@ function buildComponents(glossaryTerms?: Map<string, GlossaryTermLookup>): Compo
   };
 }
 
+// react-markdown's `defaultUrlTransform` sanitizes every href/src through an
+// allow-list of protocols (http(s)/irc(s)/mailto/xmpp) and silently empties
+// anything else — which would strip our `glossary:` scheme before the `a`
+// component below ever sees it. This wrapper carves out an exception for
+// `glossary:` (resolved entirely client-side by `<GlossaryLink>`, never used
+// as a real navigable URL) and defers to the default sanitizer for
+// everything else, so unsafe schemes like `javascript:` are still stripped.
+function urlTransform(url: string): string {
+  if (url.startsWith(GLOSSARY_PROTOCOL)) {
+    return url;
+  }
+  return defaultUrlTransform(url);
+}
+
 export function Markdown({
   content,
   glossaryTerms,
@@ -147,7 +161,11 @@ export function Markdown({
 }) {
   return (
     <div className="max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildComponents(glossaryTerms)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={buildComponents(glossaryTerms)}
+        urlTransform={urlTransform}
+      >
         {content}
       </ReactMarkdown>
     </div>

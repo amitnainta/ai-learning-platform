@@ -33,7 +33,14 @@ export const listPathsForRole = cache(async (role: RoleArchetype) => {
       courses: {
         where: { course: publishedContentItem },
         include: {
-          course: { include: { items: { where: { contentItem: publishedContentItem } } } },
+          course: {
+            include: {
+              items: {
+                where: { contentItem: publishedContentItem },
+                select: { contentItem: { select: { estimatedMinutes: true } } },
+              },
+            },
+          },
         },
       },
     },
@@ -121,7 +128,7 @@ export const getGlossaryTerm = cache(async (slug: string) => {
 /** A slug -> term lookup map for the subset of glossary terms referenced by one Markdown body (`<Markdown>`'s `glossary:` links). */
 export const getGlossaryTermsBySlugs = cache(async (slugs: string[]) => {
   if (slugs.length === 0) {
-    return new Map<string, Awaited<ReturnType<typeof getGlossaryTerm>>>();
+    return new Map<string, NonNullable<Awaited<ReturnType<typeof getGlossaryTerm>>>>();
   }
   const terms = await prisma.glossaryTerm.findMany({
     where: { slug: { in: slugs }, ...publishedContentItem },
