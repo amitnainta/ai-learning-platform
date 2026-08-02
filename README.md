@@ -2,9 +2,12 @@
 
 A free, curated AI/ML learning platform: guided learning paths built from
 curated third-party content, with placement, progress tracking, ratings, and
-certificates. This repository is the R1 scaffolding/infrastructure foundation
-— no product features exist yet; see `docs/requirements/` for the full
-requirements package and `factory/work/` for in-flight work items.
+certificates. See `docs/requirements/` for the full requirements package and
+`factory/work/` for in-flight work items.
+
+Account and auth (registration, login/logout, password reset, role/level
+profile, data export/delete) is the first real product feature — see
+`docs/architecture/auth.md` for the decision record.
 
 ## Stack
 
@@ -36,24 +39,43 @@ npm ci
 # 2. Configure environment variables
 cp .env.example .env.local
 # then edit .env.local and fill in real values:
-#   DATABASE_URL   — pooled Postgres connection string
-#   DIRECT_URL     — direct (unpooled) Postgres connection string, used by Prisma Migrate
+#   DATABASE_URL           — pooled Postgres connection string
+#   DIRECT_URL             — direct (unpooled) Postgres connection string, used by Prisma Migrate
 #   SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN — optional locally; Sentry no-ops when unset
-#   APP_URL        — defaults to http://localhost:3000
+#   APP_URL                — defaults to http://localhost:3000
+#   BETTER_AUTH_SECRET     — required, min 32 chars; generate with `openssl rand -base64 32`
+#   BETTER_AUTH_URL        — optional; defaults to APP_URL
+#   RESEND_API_KEY         — optional locally; mail falls back to the console transport when unset
+#   EMAIL_FROM             — optional; defaults to no-reply@localhost
+#   MAIL_TRANSPORT         — optional override: "resend" | "console" | "file"
 
-# 3. Apply the (stub) Prisma schema to your database
+# 3. Apply the Prisma schema (User/Session/Account/Verification/RateLimit) to your database
 npx prisma migrate dev
 
 # 4. Start the dev server
 npm run dev
 ```
 
-The app serves at http://localhost:3000. The current home page and layout are
-placeholders (`src/app/page.tsx`, `src/app/layout.tsx`) proving the scaffold
-renders; real product UI arrives with later feature work items.
+The app serves at http://localhost:3000. `/` is a public landing page; `/sign-up`,
+`/sign-in`, `/forgot-password`, and `/reset-password` are the auth screens;
+`/dashboard`, `/onboarding`, and `/account` require a session (enforced
+server-side by `requireUser()`/`requireOnboardedUser()`, `src/lib/auth/session.ts`
+— `src/middleware.ts` is only a cookie-presence UX fast path, not the real
+gate). See `docs/architecture/auth.md` for the full decision record.
 
 `GET /api/health` returns `{ "status": "ok" }` — this is the target for the
 external uptime monitor and for CI/deploy smoke checks.
+
+### Local mail (password reset, verification, account deletion)
+
+Without `RESEND_API_KEY` set, transactional email uses the **console**
+transport by default: the recipient, subject, and body (including the
+action link) are logged to the terminal running `npm run dev`. Set
+`MAIL_TRANSPORT=file` in `.env.local` to instead write each message as JSON
+to a gitignored `.mail-outbox/` directory — this is what the Playwright e2e
+suite uses to read a real password-reset link without a mail provider (see
+`e2e/helpers/mail.ts`). See `src/lib/mail/mailer.ts` for the transport
+selection logic and `docs/architecture/auth.md` §5.
 
 ## Commands
 
@@ -67,7 +89,8 @@ external uptime monitor and for CI/deploy smoke checks.
 | `npm run format:check`    | Prettier — check only, no writes (used in CI indirectly via lint/build) |
 | `npm run test`            | Unit/component tests (Vitest + React Testing Library)                   |
 | `npm run test:watch`      | Vitest in watch mode                                                    |
-| `npm run test:e2e`        | End-to-end smoke tests (Playwright) — builds and boots the app first    |
+| `npm run test:e2e`        | End-to-end tests (Playwright) — builds and boots the app first          |
+| `npm run test:e2e:ui`     | End-to-end tests in Playwright's interactive UI mode                    |
 | `npm run prisma:generate` | Regenerate the Prisma client from `prisma/schema.prisma`                |
 | `npm run prisma:migrate`  | Create/apply a dev migration (`prisma migrate dev`)                     |
 | `npm run prisma:deploy`   | Apply pending migrations in a non-interactive/production context        |
@@ -86,30 +109,55 @@ later as a cryptic Prisma connection error.
 ## Testing
 
 - **Unit/component** (`npm run test`): Vitest + React Testing Library, jsdom
-  environment. Setup file: `src/test/setup.ts`. Sample:
-  `src/app/__tests__/home.test.tsx`.
-- **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project. On a
-  fresh machine, install the browser binary once first:
-  `npx playwright install --with-deps chromium` (CI's `e2e-smoke` job does this
-  automatically; it is not a one-time global install, so run it again if
-  Playwright reports a missing browser after an update).
-  `playwright.config.ts`'s `webServer` builds and starts the app automatically
-  (`npm run build && npm run start`) before running tests, and reuses an
-  already-running dev server locally if `reuseExistingServer` conditions are
-  met. Sample: `e2e/smoke.spec.ts` (home page renders; `/api/health` returns
-  200). Per NFR-MAINT-004, later feature work items add the mandated core
-  user-journey e2e coverage (registration, placement, course completion,
-  rating, certificate issuance) on top of this harness.
+  environment (Node environment for a few DB/native-module-adjacent files via
+  a `// @vitest-environment node` docblock — e.g.
+  `src/lib/auth/__tests__/password.test.ts`). Setup file: `src/test/setup.ts`.
+  Covers validation schemas, argon2 password hashing, the Better Auth options
+  object, the mail transport, and the sign-up/delete-account forms.
+
+- **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project,
+  against a **real local Postgres** (the account/auth journeys create,
+  authenticate, and delete real rows — there's no mocking at this layer).
+  1. Point `DATABASE_URL`/`DIRECT_URL` in `.env.local` at a local Postgres
+     instance (or a scratch Neon branch) and run `npx prisma migrate dev` so
+     the schema exists.
+  2. Install the browser binary once per machine:
+     `npx playwright install --with-deps chromium` (CI's `e2e` job does this
+     automatically every run — it is not a global one-time install, so run it
+     again locally if Playwright reports a missing browser after an update).
+  3. `npm run test:e2e`. `playwright.config.ts` loads `.env.local` via
+     `dotenv`, then builds and starts the app (`npm run build && npm run start`)
+     with `MAIL_TRANSPORT=file` and an e2e-only rate-limit override
+     (`E2E_DISABLE_RATE_LIMIT=true` — see `docs/architecture/auth.md` §4;
+     never set in a deployed environment) forced into the server's env, and
+     reuses an already-running dev server locally if `reuseExistingServer`
+     conditions are met.
+
+  Specs: `e2e/smoke.spec.ts` (harness proof), `e2e/auth-registration.spec.ts`,
+  `e2e/auth-login-logout.spec.ts`, `e2e/auth-password-reset.spec.ts`,
+  `e2e/account-profile.spec.ts`, `e2e/account-data.spec.ts` — covering
+  registration + placement self-select, login/logout + route protection,
+  password reset (via a real emailed link read from `.mail-outbox/`), profile
+  changes, and data export/deletion (NFR-MAINT-004's mandated core journeys,
+  for the auth/account surface). `e2e/helpers/db.ts` generates unique
+  `@e2e.test` emails per test run and a `globalTeardown` (registered in
+  `playwright.config.ts`) removes every user it created afterward, so the
+  suite is safe to re-run against a shared dev database — it only ever
+  touches rows it created itself.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every PR/push to `main`: install, lint, unit
-test, build, and a production-dependency vulnerability audit
-(`npm audit --omit=dev --audit-level=high`; see the inline comment in that
-workflow for why it's scoped to production dependencies). A separate,
-non-blocking job runs the Playwright e2e smoke test — kept optional at R1 to
-keep the required-checks path fast; promote it to required once real e2e
-journeys land with feature work.
+`.github/workflows/ci.yml` runs on every PR/push to `main`:
+
+- **`build-and-test`** — install, lint, unit test, build, and a
+  production-dependency vulnerability audit
+  (`npm audit --omit=dev --audit-level=high`; see the inline comment in that
+  workflow for why it's scoped to production dependencies). Uses placeholder
+  `DATABASE_URL`/`DIRECT_URL`/`BETTER_AUTH_SECRET` values — no live database
+  is needed for lint/unit-test/build.
+- **`e2e`** — a blocking job (per NFR-MAINT-004) that spins up a `postgres:16`
+  service container, runs `npx prisma migrate deploy` against it, then runs
+  the full Playwright suite described above with `MAIL_TRANSPORT=file`.
 
 ## Deploy flow
 
@@ -123,8 +171,9 @@ journeys land with feature work.
    `.env.example` documents every variable's shape with placeholder values
    only.
 4. Database schema changes ship via `npx prisma migrate deploy` against the
-   production `DATABASE_URL`/`DIRECT_URL` (wire this into the deploy pipeline
-   once real migrations exist beyond the current stub model).
+   production `DATABASE_URL`/`DIRECT_URL` — this is currently a manual step
+   (see `docs/runbooks/provisioning-checklist.md`); wiring it into the Vercel
+   build command is a documented follow-up.
 
 No deployment has happened yet — provisioning the actual Vercel/Neon/Sentry/
 uptime-monitor accounts is tracked as an explicit manual checklist in
@@ -135,6 +184,10 @@ uptime-monitor accounts is tracked as an explicit manual checklist in
 - `docs/architecture/infrastructure.md` — the infrastructure decision record
   (hosting/CDN, database, blob storage, observability, HTTPS enforcement, and
   how each maps onto the relevant NFRs).
+- `docs/architecture/auth.md` — the auth decision record (Better Auth,
+  database sessions, argon2id, rate limiting, transactional email, email
+  verification, onboarding, minimum-age acknowledgment, account deletion) and
+  its NFR-SEC-001/003/005 mapping.
 - `docs/architecture/disaster-recovery.md` — DR process, failure scenarios, and
   explicit RTO/RPO targets.
 - `docs/runbooks/backup-and-restore.md` — backup schedule and the step-by-step
@@ -149,21 +202,39 @@ uptime-monitor accounts is tracked as an explicit manual checklist in
 
 ```
 src/
-  app/                 # Next.js App Router routes
-    api/health/        # GET /api/health — uptime monitor + CI smoke target
-    __tests__/         # Vitest + RTL component tests
-    layout.tsx          # Root layout (placeholder)
-    page.tsx             # Home page (placeholder)
+  app/
+    (auth)/              # sign-up, sign-in, forgot-password, reset-password pages
+    (app)/                # dashboard, onboarding, account (require a session)
+    account-deleted/      # public post-deletion confirmation page
+    api/
+      auth/[...all]/       # Better Auth handler (GET/POST)
+      account/             # PATCH profile, GET export, DELETE account
+      health/              # GET /api/health — uptime monitor + CI smoke target
+    layout.tsx              # root layout — SiteHeader, skip-to-content link
+    page.tsx                 # public landing page
+    globals.css               # Tailwind v4 entry + design tokens
+  components/
+    auth/                # sign-up/sign-in/forgot/reset forms
+    account/             # role-level form, delete-account form, verify-email banner
+    layout/site-header.tsx
+    ui/form-field.tsx     # labeled input primitive (NFR-A11Y-004)
   lib/
-    env.ts               # zod-validated environment accessor
-    prisma.ts            # hot-reload/serverless-safe Prisma client singleton
-  instrumentation.ts     # Next.js instrumentation hook — loads Sentry server/edge init
+    auth/                # password hashing, Better Auth options/instance/client, session helpers
+    mail/                 # mailer transport + templates
+    validation/account.ts  # Zod schemas for every auth/account form and route
+    env.ts                  # zod-validated environment accessor
+    prisma.ts                # hot-reload/serverless-safe Prisma client singleton
+  middleware.ts            # optimistic cookie-presence route protection (UX fast path only)
+  instrumentation.ts       # Next.js instrumentation hook — loads Sentry server/edge init
   instrumentation-client.ts # Next.js client-bundle hook — loads Sentry client init
-  test/setup.ts          # Vitest + jest-dom setup
+  test/setup.ts             # Vitest + jest-dom setup
 prisma/
-  schema.prisma          # stub datasource + one trivial model (toolchain proof only)
+  schema.prisma           # User/Session/Account/Verification/RateLimit + product fields
+  migrations/              # committed migration history
 e2e/
-  smoke.spec.ts          # Playwright smoke test
+  helpers/                # db.ts (test users, cleanup), mail.ts (outbox reader)
+  global-teardown.ts       # removes e2e-created users after the run
+  smoke.spec.ts, auth-*.spec.ts, account-*.spec.ts
 sentry.server.config.ts
 sentry.edge.config.ts     # per-runtime Sentry init (no-op without a DSN)
 docs/

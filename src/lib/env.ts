@@ -30,6 +30,34 @@ const envSchema = z.object({
     .min(1, "APP_URL is required")
     .url("APP_URL must be a valid URL")
     .default("http://localhost:3000"),
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(
+      32,
+      "BETTER_AUTH_SECRET is required (min 32 chars) — generate with `openssl rand -base64 32` " +
+        "and see docs/runbooks/provisioning-checklist.md",
+    ),
+  BETTER_AUTH_URL: z.string().url("BETTER_AUTH_URL must be a valid URL").optional(),
+  RESEND_API_KEY: z.string().optional(),
+  // A plain `.email()` check rejects "no-reply@localhost" (no TLD), which
+  // is exactly the documented local-dev default (.env.example) — so this
+  // uses a deliberately loose "looks like an address" shape check instead.
+  EMAIL_FROM: z
+    .string()
+    .regex(/^[^\s@]+@[^\s@]+$/, "EMAIL_FROM must look like an email address (user@host)")
+    .default("no-reply@localhost"),
+  MAIL_TRANSPORT: z.enum(["resend", "console", "file"]).optional(),
+  // Not a documented product env var (deliberately absent from
+  // .env.example): an explicit, narrowly-scoped override so the Playwright
+  // e2e suite doesn't trip Better Auth's rate limiter (decision #6; see the
+  // "Notes" paragraph under the Test plan in
+  // factory/work/user-accounts-auth/PLAN.md). Wired only into
+  // playwright.config.ts's webServer env and the CI e2e job's env — never
+  // set in production. See src/lib/auth/options.ts for where it's read.
+  E2E_DISABLE_RATE_LIMIT: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -60,6 +88,12 @@ export function getEnv(): Env {
     );
   }
 
-  cachedEnv = parsed.data;
+  // BETTER_AUTH_URL defaults to APP_URL when unset (see .env.example) — this
+  // depends on another field's resolved value, so it's applied here rather
+  // than as a static zod `.default()`.
+  cachedEnv = {
+    ...parsed.data,
+    BETTER_AUTH_URL: parsed.data.BETTER_AUTH_URL ?? parsed.data.APP_URL,
+  };
   return cachedEnv;
 }

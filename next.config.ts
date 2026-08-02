@@ -37,6 +37,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // @node-rs/argon2 (src/lib/auth/password.ts) ships a native binary per
+  // platform; excluding it from Next.js's server bundling means the
+  // platform-specific .node file is required at runtime instead of being
+  // (incorrectly) inlined into the webpack/turbopack bundle.
+  serverExternalPackages: ["@node-rs/argon2"],
   async headers() {
     return [
       {
