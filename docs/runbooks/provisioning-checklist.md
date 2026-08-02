@@ -90,6 +90,40 @@ Check each off only after actually performing it outside this repo.
       `.github/workflows/ci.yml`, which this item promotes from an optional,
       `continue-on-error` smoke test to a blocking check.
 
+### Added by learning-paths-content
+
+- [ ] After each deploy that changes `content/`, run `npm run content:check`
+      and then `npm run content:import` against the production (Neon)
+      `DATABASE_URL`. **Fails visibly**: without it the deployed site renders
+      empty paths — the pages work, they just have nothing in them. This is
+      the R1 content-ops process (FR-ADMIN-001); it goes away when
+      FR-ADMIN-002's admin UI lands at R2. See
+      `docs/content/authoring-guide.md` for the full workflow.
+- [ ] Record and upload the one designated lesson video plus its WebVTT
+      captions file to Vercel Blob
+      (`content/items/ai-strategy-fundamentals.md`), then **uncomment** that
+      lesson's `video` block, paste in the resulting CDN URLs, and re-run
+      `npm run content:check` followed by `npm run content:import`.
+      **Degrades gracefully by design**: until then the pack holds no video
+      URL at all, so the lesson renders as text with no video element and
+      nothing looks broken to a visitor; the FR-PATH-005 markup is proven by
+      the `lesson-video` unit test
+      (`src/components/content/__tests__/lesson-video.test.tsx`) and the
+      captions-required schema test, so nothing goes red either — but the
+      video half of FR-PATH-005 is not demonstrable on the live site until
+      this is done.
+- [ ] Manually open every curated link in the seed pack once before ship and
+      confirm it resolves and that the recorded publisher/author attribution
+      is accurate (NFR-COMP-001). Automated link checking is NFR-AVAIL-004,
+      R2.
+- [ ] Set a recurring calendar reminder for the content review cadence
+      (curated 90 days, original 365 days) per
+      `docs/content/authoring-guide.md`. Nothing in the app enforces this at
+      R1; FR-ADMIN-004's automated flagging is R2.
+- [ ] No new environment variables, accounts, or services are introduced by
+      this item — the existing Neon and Vercel Blob provisioning (above)
+      covers it.
+
 ## Why these stay manual
 
 Each of these requires either a real external account, a real payment/free-tier
