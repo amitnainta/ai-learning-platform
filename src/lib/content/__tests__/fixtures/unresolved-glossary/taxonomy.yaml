@@ -1,0 +1,7 @@
+topics:
+  - slug: sample-topic
+    label: Sample Topic
+formats:
+  - ARTICLE
+sourceTypes:
+  - ORIGINAL

@@ -1,0 +1,7 @@
+topics:
+  - slug: known-topic
+    label: Known Topic
+formats:
+  - ARTICLE
+sourceTypes:
+  - ORIGINAL
