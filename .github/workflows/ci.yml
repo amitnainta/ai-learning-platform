@@ -25,10 +25,6 @@ jobs:
       # validation so `npm run build` doesn't fail; never a real secret, and
       # never used to sign anything outside this job's own throwaway build.
       BETTER_AUTH_SECRET: "ci-placeholder-secret-not-real-min-32-chars"
-      # Console transport would also work here (build/lint/test never send
-      # mail), but pinning it explicitly keeps both jobs' env blocks
-      # consistent and avoids depending on the resend/console fallback rule.
-      MAIL_TRANSPORT: "file"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,6 +45,14 @@ jobs:
         run: npm run test
 
       - name: Build
+        # Scoped to this step only (not the job): at job level this leaked
+        # into "Unit tests" and overrode the default-transport logic that
+        # src/lib/mail/__tests__/mailer.test.ts asserts on. Console transport
+        # would also work for a build (it never sends mail), but pinning it
+        # explicitly here avoids depending on the resend/console fallback
+        # rule while staying out of every other step's environment.
+        env:
+          MAIL_TRANSPORT: "file"
         run: npm run build
 
       - name: Dependency audit (high+ only, production deps)

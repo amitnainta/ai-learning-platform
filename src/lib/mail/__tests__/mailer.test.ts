@@ -59,6 +59,15 @@ beforeEach(() => {
   for (const [key, value] of Object.entries(TEST_ENV)) {
     vi.stubEnv(key, value);
   }
+  // Deliberately cleared (not merely left alone): these are the vars that
+  // resolveMailTransport()/sendMail() read to pick a transport, and several
+  // tests below assert on the default/derived behaviour. If an ambient CI
+  // job env or a developer's shell has one of these set, leaving them
+  // untouched would silently flip those assertions (see the build-and-test
+  // job's former job-level MAIL_TRANSPORT leak in .github/workflows/ci.yml).
+  vi.stubEnv("MAIL_TRANSPORT", undefined);
+  vi.stubEnv("RESEND_API_KEY", undefined);
+  vi.stubEnv("EMAIL_FROM", undefined);
   consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
