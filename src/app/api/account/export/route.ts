@@ -6,11 +6,15 @@ import { prisma } from "@/lib/prisma";
 // export of the requesting user's own personal data. Deliberately
 // excludes the password hash and every session/verification token — only
 // non-secret metadata about sessions (created/last-used timestamps, IP,
-// user agent) is included.
+// user agent) is included. Also includes the user's progress rows
+// (decision #9, factory/work/progress-tracking/PLAN.md) — "what I have
+// completed" is unambiguously the user's own data. Carries the item
+// **slug and title**, never the cuid, so the file is meaningful to a
+// human reading it.
 export async function GET() {
   const user = await requireUser();
 
-  const [profile, sessions] = await Promise.all([
+  const [profile, sessions, progress] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: user.id },
       select: {
@@ -36,12 +40,30 @@ export async function GET() {
         userAgent: true,
       },
     }),
+    prisma.progress.findMany({
+      where: { userId: user.id },
+      select: {
+        status: true,
+        createdAt: true,
+        lastViewedAt: true,
+        completedAt: true,
+        contentItem: { select: { slug: true, title: true } },
+      },
+    }),
   ]);
 
   const exportPayload = {
     exportedAt: new Date().toISOString(),
     profile,
     sessions,
+    progress: progress.map((row) => ({
+      slug: row.contentItem.slug,
+      title: row.contentItem.title,
+      status: row.status,
+      startedAt: row.createdAt,
+      lastViewedAt: row.lastViewedAt,
+      completedAt: row.completedAt,
+    })),
   };
 
   const fileName = `account-export-${new Date().toISOString().slice(0, 10)}.json`;
