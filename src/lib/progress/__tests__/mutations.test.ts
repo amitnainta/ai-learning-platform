@@ -15,7 +15,11 @@ import { markComplete, recordView, reopen, resolvePublishedContentItemBySlug } f
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
-function buildMockClient(overrides: Record<string, unknown> = {}) {
+// Deliberately untyped as `PrismaClient` (a `never` cast is used only at
+// each call site below, where a real mutation function is invoked) so
+// `client.progress.upsert.mock.calls` etc. stay type-checkable in this
+// file's own assertions.
+function buildMockClient() {
   return {
     progress: {
       upsert: vi.fn(),
@@ -25,17 +29,16 @@ function buildMockClient(overrides: Record<string, unknown> = {}) {
     contentItem: {
       findFirst: vi.fn(),
     },
-    ...overrides,
-  } as never;
+  };
 }
 
 describe("recordView", () => {
   it("upserts, creating at IN_PROGRESS and never touching status on update", async () => {
     const client = buildMockClient();
-    await recordView({ userId: "u1", contentItemId: "c1" }, client);
+    await recordView({ userId: "u1", contentItemId: "c1" }, client as never);
 
     expect(client.progress.upsert).toHaveBeenCalledTimes(1);
-    const call = client.progress.upsert.mock.calls[0][0];
+    const call = client.progress.upsert.mock.calls[0]![0];
     expect(call.where).toEqual({ userId_contentItemId: { userId: "u1", contentItemId: "c1" } });
     expect(call.create).toMatchObject({ userId: "u1", contentItemId: "c1", status: "IN_PROGRESS" });
     expect(call.update).not.toHaveProperty("status");
@@ -45,9 +48,9 @@ describe("recordView", () => {
   it("on an existing COMPLETE row, the update payload cannot downgrade status (no status key at all)", async () => {
     const client = buildMockClient();
     client.progress.upsert.mockResolvedValue({ status: "COMPLETE" });
-    const result = await recordView({ userId: "u1", contentItemId: "c1" }, client);
+    const result = await recordView({ userId: "u1", contentItemId: "c1" }, client as never);
 
-    const call = client.progress.upsert.mock.calls[0][0];
+    const call = client.progress.upsert.mock.calls[0]![0];
     expect(Object.keys(call.update)).toEqual(["lastViewedAt"]);
     expect(result).toEqual({ status: "COMPLETE" });
   });
@@ -57,9 +60,9 @@ describe("markComplete", () => {
   it("stamps completedAt when the row has none yet", async () => {
     const client = buildMockClient();
     client.progress.findUnique.mockResolvedValue(null);
-    await markComplete({ userId: "u1", contentItemId: "c1" }, client);
+    await markComplete({ userId: "u1", contentItemId: "c1" }, client as never);
 
-    const call = client.progress.upsert.mock.calls[0][0];
+    const call = client.progress.upsert.mock.calls[0]![0];
     expect(call.create.status).toBe("COMPLETE");
     expect(call.create.completedAt).toBeInstanceOf(Date);
     expect(call.update.status).toBe("COMPLETE");
@@ -70,9 +73,9 @@ describe("markComplete", () => {
     const client = buildMockClient();
     const originalCompletedAt = new Date("2026-01-01T00:00:00.000Z");
     client.progress.findUnique.mockResolvedValue({ completedAt: originalCompletedAt });
-    await markComplete({ userId: "u1", contentItemId: "c1" }, client);
+    await markComplete({ userId: "u1", contentItemId: "c1" }, client as never);
 
-    const call = client.progress.upsert.mock.calls[0][0];
+    const call = client.progress.upsert.mock.calls[0]![0];
     expect(call.update.completedAt).toBe(originalCompletedAt);
   });
 });
@@ -80,10 +83,10 @@ describe("markComplete", () => {
 describe("reopen", () => {
   it("sets status back to IN_PROGRESS and nulls completedAt", async () => {
     const client = buildMockClient();
-    await reopen({ userId: "u1", contentItemId: "c1" }, client);
+    await reopen({ userId: "u1", contentItemId: "c1" }, client as never);
 
     expect(client.progress.update).toHaveBeenCalledTimes(1);
-    const call = client.progress.update.mock.calls[0][0];
+    const call = client.progress.update.mock.calls[0]![0];
     expect(call.where).toEqual({ userId_contentItemId: { userId: "u1", contentItemId: "c1" } });
     expect(call.data.status).toBe("IN_PROGRESS");
     expect(call.data.completedAt).toBeNull();
@@ -99,7 +102,7 @@ describe("resolvePublishedContentItemBySlug", () => {
       sourceType: "ORIGINAL",
     });
 
-    const result = await resolvePublishedContentItemBySlug("my-lesson", client);
+    const result = await resolvePublishedContentItemBySlug("my-lesson", client as never);
 
     expect(client.contentItem.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { slug: "my-lesson", status: "PUBLISHED" } }),
@@ -111,7 +114,7 @@ describe("resolvePublishedContentItemBySlug", () => {
     const client = buildMockClient();
     client.contentItem.findFirst.mockResolvedValue(null);
 
-    const result = await resolvePublishedContentItemBySlug("nonexistent", client);
+    const result = await resolvePublishedContentItemBySlug("nonexistent", client as never);
     expect(result).toBeNull();
   });
 });
