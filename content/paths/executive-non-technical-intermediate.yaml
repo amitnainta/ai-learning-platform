@@ -1,0 +1,18 @@
+slug: executive-non-technical-intermediate
+role: EXECUTIVE_NON_TECHNICAL
+level: INTERMEDIATE
+title: Executive / Non-Technical — Intermediate
+summary: Learn to think about AI strategically — where it creates real value, and how to talk about using it responsibly.
+status: PUBLISHED
+description: |
+  With the fundamentals in place, this level is about strategy: a
+  framework for deciding where AI investment is actually worth it, how to
+  measure whether it paid off, and — because large language models
+  specifically are what most organizations are evaluating right now — how
+  they work well enough to ask sharp questions about a vendor's claims.
+
+  Two courses: AI strategy and business value, then responsible AI for
+  organizations.
+courses:
+  - ai-strategy-and-business-value
+  - responsible-ai-for-organizations

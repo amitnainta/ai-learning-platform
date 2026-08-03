@@ -1,0 +1,17 @@
+slug: executive-non-technical-zero-knowledge
+role: EXECUTIVE_NON_TECHNICAL
+level: ZERO_KNOWLEDGE
+title: Executive / Non-Technical — Zero Knowledge
+summary: Start here if you have no technical background and want AI explained in plain language.
+status: PUBLISHED
+description: |
+  This is the starting point for leaders and non-technical professionals
+  who want to understand AI well enough to follow — and contribute to —
+  any conversation about it in their organization, without writing a line
+  of code.
+
+  Two courses: what AI actually is (and isn't), and a guided introduction
+  to what today's systems can and can't do.
+courses:
+  - ai-literacy-for-leaders
+  - understanding-ai-capabilities

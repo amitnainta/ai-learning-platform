@@ -1,0 +1,16 @@
+slug: technical-builder-intermediate
+role: TECHNICAL_BUILDER
+level: INTERMEDIATE
+title: Technical Builder — Intermediate
+summary: Go deeper into how large language models work and how to build with them effectively.
+status: PUBLISHED
+description: |
+  With the fundamentals in place, this level goes deeper into large
+  language models specifically — how they generate text, why they
+  hallucinate, and how to write prompts that reliably get useful output.
+
+  Two courses: the mechanics of deep learning and LLMs, then practical
+  prompt engineering.
+courses:
+  - practical-deep-learning
+  - working-with-llms

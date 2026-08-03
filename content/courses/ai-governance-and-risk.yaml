@@ -1,0 +1,9 @@
+# Executive/Non-Technical — Advanced, course 2 of 2.
+slug: ai-governance-and-risk
+title: AI Governance and Risk
+summary: Responsible AI principles and the frameworks organizations use to manage AI risk at scale.
+status: PUBLISHED
+items:
+  - responsible-ai-principles
+  - nist-ai-risk-management-framework
+  - google-responsible-ai-practices

@@ -1,0 +1,8 @@
+# Technical Builder — Intermediate, course 2 of 2.
+slug: working-with-llms
+title: Working with LLMs
+summary: How to write prompts that reliably get the output you want.
+status: PUBLISHED
+items:
+  - writing-effective-prompts
+  - openai-prompt-engineering-guide

@@ -1,0 +1,8 @@
+# Technical Builder — Advanced, course 1 of 2.
+slug: mlops-and-production-ai
+title: MLOps and Production AI
+summary: What it takes to run machine learning systems reliably once they're deployed, not just once they're trained.
+status: PUBLISHED
+items:
+  - mlops-community-guide
+  - andrew-ng-machine-learning-yearning

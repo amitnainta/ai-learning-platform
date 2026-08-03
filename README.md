@@ -7,7 +7,9 @@ certificates. See `docs/requirements/` for the full requirements package and
 
 Account and auth (registration, login/logout, password reset, role/level
 profile, data export/delete) is the first real product feature — see
-`docs/architecture/auth.md` for the decision record.
+`docs/architecture/auth.md` for the decision record. Learning paths, courses,
+lessons, curated links, and the glossary are the second — see
+`docs/architecture/content.md` and `docs/content/authoring-guide.md`.
 
 ## Stack
 
@@ -49,19 +51,28 @@ cp .env.example .env.local
 #   EMAIL_FROM             — optional; defaults to no-reply@localhost
 #   MAIL_TRANSPORT         — optional override: "resend" | "console" | "file"
 
-# 3. Apply the Prisma schema (User/Session/Account/Verification/RateLimit) to your database
+# 3. Apply the Prisma schema (auth + content tables) to your database
 npx prisma migrate dev
 
-# 4. Start the dev server
+# 4. Load the content pack (paths, courses, lessons, glossary) into your database
+npm run content:check    # validates content/**, writes nothing
+npm run content:import   # applies it — idempotent, safe to re-run
+
+# 5. Start the dev server
 npm run dev
 ```
 
-The app serves at http://localhost:3000. `/` is a public landing page; `/sign-up`,
-`/sign-in`, `/forgot-password`, and `/reset-password` are the auth screens;
-`/dashboard`, `/onboarding`, and `/account` require a session (enforced
-server-side by `requireUser()`/`requireOnboardedUser()`, `src/lib/auth/session.ts`
-— `src/middleware.ts` is only a cookie-presence UX fast path, not the real
-gate). See `docs/architecture/auth.md` for the full decision record.
+The app serves at http://localhost:3000. `/` is a public landing page; `/paths`,
+`/paths/[role]`, `/paths/[role]/[level]`, `/courses/[slug]`, `/lessons/[slug]`,
+`/glossary`, and `/glossary/[slug]` are the public content surface (readable
+with no session — FR-ACC-008; skipping step 4 above just means those pages
+render with nothing in them, not an error); `/sign-up`, `/sign-in`,
+`/forgot-password`, and `/reset-password` are the auth screens; `/dashboard`,
+`/onboarding`, and `/account` require a session (enforced server-side by
+`requireUser()`/`requireOnboardedUser()`, `src/lib/auth/session.ts` —
+`src/middleware.ts` is only a cookie-presence UX fast path, not the real
+gate). See `docs/architecture/auth.md` and `docs/architecture/content.md` for
+the full decision records.
 
 `GET /api/health` returns `{ "status": "ok" }` — this is the target for the
 external uptime monitor and for CI/deploy smoke checks.
@@ -95,6 +106,8 @@ selection logic and `docs/architecture/auth.md` §5.
 | `npm run prisma:migrate`  | Create/apply a dev migration (`prisma migrate dev`)                     |
 | `npm run prisma:deploy`   | Apply pending migrations in a non-interactive/production context        |
 | `npm run prisma:studio`   | Open Prisma Studio (a GUI for the database)                             |
+| `npm run content:check`   | Validate `content/**` against the pack schemas — writes nothing         |
+| `npm run content:import`  | Validate and import `content/**` into the database — idempotent         |
 
 ## Environment variables
 
@@ -113,7 +126,13 @@ later as a cryptic Prisma connection error.
   a `// @vitest-environment node` docblock — e.g.
   `src/lib/auth/__tests__/password.test.ts`). Setup file: `src/test/setup.ts`.
   Covers validation schemas, argon2 password hashing, the Better Auth options
-  object, the mail transport, and the sign-up/delete-account forms.
+  object, the mail transport, and the sign-up/delete-account forms, plus (for
+  the content system) the pack Zod schemas, frontmatter parsing, the loader's
+  cross-file validation (fixture packs under
+  `src/lib/content/__tests__/fixtures/`), content hashing, the pure
+  create/update/unchanged/retire import planner, and the Markdown/glossary/
+  item-card/lesson-video/path-switcher components — none of these touch a
+  database.
 
 - **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project,
   against a **real local Postgres** (the account/auth journeys create,
@@ -144,6 +163,16 @@ later as a cryptic Prisma connection error.
   `playwright.config.ts`) removes every user it created afterward, so the
   suite is safe to re-run against a shared dev database — it only ever
   touches rows it created itself.
+
+  Content journeys: `e2e/content-paths.spec.ts`, `e2e/content-lesson.spec.ts`,
+  `e2e/content-glossary.spec.ts`, `e2e/content-path-switch.spec.ts` — anonymous
+  browsing of the path/course/lesson/glossary hierarchy, curated-link
+  attribution, and a signed-in role/level switch. `e2e/global-setup.ts`
+  (registered as `globalSetup`) imports `content/**` before the suite runs,
+  so these specs are self-seeding — no manual `content:import` step needed
+  before `npm run test:e2e`. It's idempotent, so it's a no-op against an
+  already-seeded shared dev database. The global teardown stays user-scoped
+  only — it never deletes content rows.
 
 ## CI
 
@@ -188,6 +217,17 @@ uptime-monitor accounts is tracked as an explicit manual checklist in
   database sessions, argon2id, rate limiting, transactional email, email
   verification, onboarding, minimum-age acknowledgment, account deletion) and
   its NFR-SEC-001/003/005 mapping.
+- `docs/architecture/content.md` — the content decision record (the
+  file-pack + importer architecture, retire-not-delete, the Markdown
+  rendering pipeline, video, the Path/Course/ContentItem hierarchy, the
+  progress/rating attachment points the next work items inherit, review
+  cadence, version history, dynamic rendering, and the sample-content
+  notice) and its NFR mapping.
+- `docs/content/authoring-guide.md` — how to add/edit/retire content and get
+  it live, field by field, including the `glossary:` link convention and the
+  plain-language rules for zero-knowledge lessons.
+- `docs/content/taxonomy.md` — the human-readable tagging taxonomy (roles,
+  levels, topics, formats, source types); must match `content/taxonomy.yaml`.
 - `docs/architecture/disaster-recovery.md` — DR process, failure scenarios, and
   explicit RTO/RPO targets.
 - `docs/runbooks/backup-and-restore.md` — backup schedule and the step-by-step
@@ -206,6 +246,10 @@ src/
     (auth)/              # sign-up, sign-in, forgot-password, reset-password pages
     (app)/                # dashboard, onboarding, account (require a session)
     account-deleted/      # public post-deletion confirmation page
+    paths/                # /paths, /paths/[role], /paths/[role]/[level] — public
+    courses/[slug]/        # a single course page — public
+    lessons/[slug]/         # an original lesson page — public
+    glossary/               # /glossary, /glossary/[slug] — public
     api/
       auth/[...all]/       # Better Auth handler (GET/POST)
       account/             # PATCH profile, GET export, DELETE account
@@ -216,12 +260,16 @@ src/
   components/
     auth/                # sign-up/sign-in/forgot/reset forms
     account/             # role-level form, delete-account form, verify-email banner
+    content/             # Markdown renderer, glossary link, external link, tag list,
+                          # sample-content badge, item card, lesson video, path switcher, course summary
     layout/site-header.tsx
     ui/form-field.tsx     # labeled input primitive (NFR-A11Y-004)
   lib/
     auth/                # password hashing, Better Auth options/instance/client, session helpers
+    content/             # taxonomy/route constants, frontmatter/loader/hash/plan-import/import, queries
     mail/                 # mailer transport + templates
     validation/account.ts  # Zod schemas for every auth/account form and route
+    validation/content.ts   # Zod schemas for every content-pack file
     env.ts                  # zod-validated environment accessor
     prisma.ts                # hot-reload/serverless-safe Prisma client singleton
   middleware.ts            # optimistic cookie-presence route protection (UX fast path only)
@@ -229,16 +277,22 @@ src/
   instrumentation-client.ts # Next.js client-bundle hook — loads Sentry client init
   test/setup.ts             # Vitest + jest-dom setup
 prisma/
-  schema.prisma           # User/Session/Account/Verification/RateLimit + product fields
+  schema.prisma           # auth tables + Path/Course/ContentItem/Topic/GlossaryTerm etc.
   migrations/              # committed migration history
+content/                  # the content pack — see docs/content/authoring-guide.md
+  taxonomy.yaml, roles/, paths/, courses/, items/, glossary/
+scripts/
+  import-content.ts        # CLI: npm run content:import / content:check
 e2e/
-  helpers/                # db.ts (test users, cleanup), mail.ts (outbox reader)
-  global-teardown.ts       # removes e2e-created users after the run
-  smoke.spec.ts, auth-*.spec.ts, account-*.spec.ts
+  helpers/                # db.ts (test users, cleanup), mail.ts (outbox reader), register.ts
+  global-setup.ts          # imports content/** before the suite (idempotent)
+  global-teardown.ts       # removes e2e-created users after the run (content-safe)
+  smoke.spec.ts, auth-*.spec.ts, account-*.spec.ts, content-*.spec.ts
 sentry.server.config.ts
 sentry.edge.config.ts     # per-runtime Sentry init (no-op without a DSN)
 docs/
   architecture/           # decision records
+  content/                # authoring guide + taxonomy reference
   runbooks/               # operational procedures
   requirements/           # product requirements package
 ```

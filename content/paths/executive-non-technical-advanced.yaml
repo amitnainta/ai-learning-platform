@@ -1,0 +1,16 @@
+slug: executive-non-technical-advanced
+role: EXECUTIVE_NON_TECHNICAL
+level: ADVANCED
+title: Executive / Non-Technical — Advanced
+summary: Lead AI adoption at an organizational level, informed by how other organizations are actually doing it.
+status: PUBLISHED
+description: |
+  The advanced level is about leading AI transformation at scale: what the
+  research on AI adoption across hundreds of organizations actually shows,
+  and the governance and risk-management frameworks that separate
+  responsible adoption from a headline-driven scramble.
+
+  Two courses: leading AI transformation, then AI governance and risk.
+courses:
+  - leading-ai-transformation
+  - ai-governance-and-risk

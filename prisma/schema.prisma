@@ -145,3 +145,269 @@ model RateLimit {
   @@unique([key])
   @@map("rateLimit")
 }
+
+// -----------------------------------------------------------------------
+// Learning-paths-content model (learning-paths-content work item).
+//
+// `RoleArchetype` and `ProficiencyLevel` (declared above, alongside `User`)
+// are reused as-is from the auth item — not redeclared here. This item adds
+// no column and no model to `User`/`Session`/`Account`/`Verification`/
+// `RateLimit`.
+//
+// Deliberately absent: any `Progress`, `Rating`, `Bookmark`, or
+// `Certificate` model, and any user-referencing column on a content table.
+// Those are later work items' migrations. Per
+// factory/work/learning-paths-content/PLAN.md decision #6, they will
+// reference the stable ids created here: progress keys on
+// `(userId, contentItemId)`, ratings on `Course.id`/`Path.id` — see
+// docs/architecture/content.md.
+// -----------------------------------------------------------------------
+
+// FR-PATH-004 "format" axis — a closed set (see docs/content/taxonomy.md).
+enum ContentFormat {
+  ARTICLE
+  VIDEO
+  INTERACTIVE
+  COURSE
+  PAPER
+  PODCAST
+  TOOL
+}
+
+// FR-PATH-004 "source type" axis. ORIGINAL requires `body` (platform
+// authored); CURATED requires `externalUrl` + `sourcePublisher` (linked,
+// never rehosted — NFR-COMP-001). Enforced by the Zod import schema
+// (a discriminated union in src/lib/validation/content.ts), not a database
+// check constraint (decision #1 in "Prisma schema design", PLAN.md).
+enum SourceType {
+  ORIGINAL
+  CURATED
+}
+
+// Applies to RoleProfile, Path, Course, ContentItem, GlossaryTerm. Only
+// PUBLISHED renders publicly (src/lib/content/queries.ts filters on it).
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+// FR-SEARCH-004 landing-page copy for one role archetype.
+model RoleProfile {
+  id      String        @id @default(cuid())
+  role    RoleArchetype @unique
+  slug    String        @unique
+  title   String
+  summary String
+  // Markdown: who this is for, what you will learn.
+  body    String
+
+  status ContentStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("role_profile")
+}
+
+// FR-PATH-001/002: an ordered sequence of courses for one role x level
+// combination. @@unique([roleArchetype, level]) — at R1/R2 there is exactly
+// one curated path per role x level (decision #5); FR-PATH-010's
+// user-assembled custom paths are a separate, future `UserPath` model, not
+// extra rows here.
+model Path {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  roleArchetype RoleArchetype
+  level         ProficiencyLevel
+  title         String
+  summary       String
+  // Markdown.
+  description   String
+
+  status ContentStatus @default(DRAFT)
+
+  courses PathCourse[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roleArchetype, level])
+  @@index([status])
+  @@map("path")
+}
+
+// No duration column: estimated duration is summed from a course's items at
+// read time (src/lib/content/queries.ts) so it cannot drift out of sync
+// (Prisma schema design notes, PLAN.md).
+model Course {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  title       String
+  summary     String
+  // Markdown, optional.
+  description String?
+
+  status ContentStatus @default(DRAFT)
+
+  paths PathCourse[]
+  items CourseItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("course")
+}
+
+// Ordered many-to-many join, Path -> Course. Deliberately no unique
+// constraint on `position`: the importer rewrites a path's ordering
+// wholesale inside one transaction, and a unique position constraint would
+// trip on transient intermediate states (decision #5).
+model PathCourse {
+  id       String @id @default(cuid())
+  pathId   String
+  courseId String
+  position Int
+
+  path   Path   @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([pathId, courseId])
+  @@index([pathId, position])
+  @@map("path_course")
+}
+
+// Ordered many-to-many join, Course -> ContentItem. Same shape/rationale as
+// PathCourse.
+model CourseItem {
+  id            String @id @default(cuid())
+  courseId      String
+  contentItemId String
+  position      Int
+
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, contentItemId])
+  @@index([courseId, position])
+  @@map("course_item")
+}
+
+// The atomic content unit and the stable id everything later (Progress,
+// Rating, Certificate) hangs off (decision #6). `slug` is author-controlled
+// and stable across imports (decision #2) — the id itself never rotates.
+model ContentItem {
+  id      String @id @default(cuid())
+  slug    String @unique
+  title   String
+  summary String
+
+  // Tagging (FR-PATH-004) — validated at import, displayed in the UI.
+  roles            RoleArchetype[]
+  level            ProficiencyLevel
+  format           ContentFormat
+  estimatedMinutes Int
+  sourceType       SourceType
+  topics           Topic[]
+
+  // Original-lesson fields (SourceType.ORIGINAL). `video*` fields are all
+  // optional and, per decision #4, `videoCaptionsUrl` is required whenever
+  // `videoUrl` is present — enforced by the Zod import schema, not the
+  // database.
+  body                 String?
+  videoUrl             String?
+  videoCaptionsUrl     String?
+  videoPosterUrl       String?
+  videoDurationSeconds Int?
+
+  // Curated fields (SourceType.CURATED) — NFR-COMP-001: linked, never
+  // rehosted; publisher attribution displayed on every curated item.
+  externalUrl       String?
+  sourcePublisher   String?
+  sourceAuthor      String?
+  sourcePublishedOn DateTime?
+  attributionNote   String?
+
+  // Lifecycle (FR-PATH-007).
+  status            ContentStatus @default(DRAFT)
+  publishedAt       DateTime?
+  retiredAt         DateTime?
+  lastReviewedAt    DateTime
+  reviewCadenceDays Int
+  nextReviewDueAt   DateTime
+  version           Int           @default(1)
+  contentHash       String
+
+  courses  CourseItem[]
+  versions ContentItemVersion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([level])
+  @@index([nextReviewDueAt])
+  @@map("content_item")
+}
+
+// Append-only version history (FR-PATH-007, decision #8). Written by the
+// importer on create and on every content-hash-detected change; never
+// updated or deleted.
+model ContentItemVersion {
+  id             String   @id @default(cuid())
+  contentItemId  String
+  version        Int
+  contentHash    String
+  // Full JSON snapshot of the item's importable fields at this version.
+  // Deliberately untyped (Risks/open questions #11, PLAN.md) — a snapshot
+  // must survive future schema changes without a backfill.
+  snapshot       Json
+  changeNote     String?
+  lastReviewedAt DateTime
+  createdAt      DateTime @default(now())
+
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([contentItemId, version])
+  @@index([contentItemId])
+  @@map("content_item_version")
+}
+
+// Topics are data, not an enum (decision #9) — the open-ended taxonomy
+// axis, declared in content/taxonomy.yaml. Implicit many-to-many to
+// ContentItem.
+model Topic {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  label       String
+  description String?
+
+  items ContentItem[]
+
+  @@map("topic")
+}
+
+// FR-PATH-008 contextual definitions. `shortDefinition` is capped at 200
+// characters by the Zod import schema (used for the inline hover/focus
+// definition); `body` is the long-form Markdown definition for the term
+// page.
+model GlossaryTerm {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  term            String
+  shortDefinition String
+  body            String
+  aliases         String[]
+  relatedSlugs    String[]
+  lastReviewedAt  DateTime
+
+  status ContentStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([term])
+  @@map("glossary_term")
+}

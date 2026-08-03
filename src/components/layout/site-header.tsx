@@ -17,6 +17,13 @@ export async function SiteHeader() {
           AI Learning Platform
         </Link>
         <nav className="flex items-center gap-4 text-sm">
+          {/* FR-ACC-008: browsable without an account — visible to anonymous visitors too. */}
+          <Link href="/paths" className="text-[var(--color-text)]">
+            Paths
+          </Link>
+          <Link href="/glossary" className="text-[var(--color-text)]">
+            Glossary
+          </Link>
           {user ? (
             <>
               <Link href="/dashboard" className="text-[var(--color-text)]">

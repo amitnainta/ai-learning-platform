@@ -1,0 +1,8 @@
+slug: path-b
+role: TECHNICAL_BUILDER
+level: ZERO_KNOWLEDGE
+title: Path B
+summary: Summary.
+description: Description text.
+courses:
+  - course-one

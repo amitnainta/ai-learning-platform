@@ -1,0 +1,17 @@
+slug: technical-builder-advanced
+role: TECHNICAL_BUILDER
+level: ADVANCED
+title: Technical Builder — Advanced
+summary: Run AI systems reliably and responsibly in production, not just in a notebook.
+status: PUBLISHED
+description: |
+  The advanced level covers what separates a working demo from a shipped,
+  maintained AI system: MLOps practices for deploying and monitoring models
+  in production, and the responsible-AI principles — bias, explainability,
+  accountability — that matter once a system is affecting real users.
+
+  Two courses: production ML operations, then responsible AI for LLM
+  systems specifically.
+courses:
+  - mlops-and-production-ai
+  - advanced-llm-systems

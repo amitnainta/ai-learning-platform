@@ -18,9 +18,15 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: [["html", { open: "never" }]],
+  // Imports the content pack (task 43, learning-paths-content) so the
+  // content-*.spec.ts journeys are self-seeding in both CI and local runs;
+  // idempotent, so a shared dev database that's already seeded is a no-op.
+  globalSetup: "./e2e/global-setup.ts",
   // Cleans up every e2e-created user (e2e/helpers/db.ts) after the run so
   // the suite stays safe to re-run against a shared dev database (Test
-  // plan notes, PLAN.md).
+  // plan notes, PLAN.md). Deliberately user-scoped only — it must never
+  // delete content rows, or a shared dev database would lose its seeded
+  // content on every run.
   globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL,

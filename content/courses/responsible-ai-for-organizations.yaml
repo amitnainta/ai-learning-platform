@@ -1,0 +1,8 @@
+# Executive/Non-Technical — Intermediate, course 2 of 2.
+slug: responsible-ai-for-organizations
+title: Responsible AI for Organizations
+summary: How LLMs actually work, and the risk-management framework organizations use to deploy AI responsibly.
+status: PUBLISHED
+items:
+  - understanding-large-language-models
+  - nist-ai-risk-management-framework

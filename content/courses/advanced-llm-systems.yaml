@@ -1,0 +1,8 @@
+# Technical Builder — Advanced, course 2 of 2.
+slug: advanced-llm-systems
+title: Advanced LLM Systems
+summary: Responsible AI practices for teams shipping LLM-powered systems to production.
+status: PUBLISHED
+items:
+  - responsible-ai-principles
+  - google-responsible-ai-practices

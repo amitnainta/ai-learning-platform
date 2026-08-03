@@ -1,0 +1,8 @@
+# Technical Builder — Zero Knowledge, course 2 of 2.
+slug: getting-started-with-machine-learning
+title: Getting Started with Machine Learning
+summary: How a model actually learns from data, with a hands-on visual walkthrough.
+status: PUBLISHED
+items:
+  - how-machine-learning-works
+  - visual-intro-to-machine-learning

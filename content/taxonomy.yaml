@@ -1,0 +1,62 @@
+# Versioned taxonomy record (NFR-MAINT-001). This is the source of truth
+# for the "topic" axis of FR-PATH-004 tagging — an open-ended list, unlike
+# the closed `formats`/`sourceTypes` enums also documented here for parity
+# with docs/content/taxonomy.md (see src/lib/validation/content.ts's
+# taxonomyFileSchema and AC15: this file and that doc must match).
+#
+# The importer (src/lib/content/loader.ts) rejects any content item in
+# content/items/*.md that references a topic slug not declared below.
+#
+# See docs/content/taxonomy.md for the human-readable version of this file
+# and docs/content/authoring-guide.md for how to add a new topic.
+
+topics:
+  - slug: ai-fundamentals
+    label: AI Fundamentals
+    description: What AI/ML is, how it differs from traditional software, and the core vocabulary.
+  - slug: machine-learning
+    label: Machine Learning
+    description: How models learn from data — supervised/unsupervised learning, training, and evaluation.
+  - slug: deep-learning
+    label: Deep Learning
+    description: Neural networks and the architectures behind modern AI systems.
+  - slug: large-language-models
+    label: Large Language Models
+    description: How LLMs are built, trained, and used, and their capabilities and limits.
+  - slug: prompt-engineering
+    label: Prompt Engineering
+    description: Techniques for getting reliable, useful output from generative AI models.
+  - slug: generative-ai
+    label: Generative AI
+    description: Models that create text, images, audio, or code rather than only classifying input.
+  - slug: ai-ethics
+    label: AI Ethics
+    description: Bias, fairness, transparency, and the human impact of AI systems.
+  - slug: ai-governance
+    label: AI Governance
+    description: Risk management, policy, and organizational controls for AI systems.
+  - slug: ai-strategy
+    label: AI Strategy
+    description: How organizations decide where and how to invest in AI.
+  - slug: ai-business-value
+    label: AI Business Value
+    description: Measuring and communicating the return on AI initiatives.
+  - slug: mlops
+    label: MLOps
+    description: Deploying, monitoring, and maintaining machine learning systems in production.
+  - slug: data-literacy
+    label: Data Literacy
+    description: Reading, questioning, and reasoning about data and model output.
+
+formats:
+  - ARTICLE
+  - VIDEO
+  - INTERACTIVE
+  - COURSE
+  - PAPER
+  - PODCAST
+  - TOOL
+
+sourceTypes:
+  - ORIGINAL
+  - CURATED
