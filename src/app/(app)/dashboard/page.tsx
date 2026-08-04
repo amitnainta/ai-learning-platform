@@ -22,7 +22,8 @@ export const metadata: Metadata = {
 // reads as an intentional product behaviour rather than a stray leftover.
 function ActivePathCard({ activePath }: { activePath: ActivePathSummary }) {
   return (
-    <div
+    <section
+      aria-label={`${activePath.title} — ${activePath.isCurrent ? "current" : "previously followed"} path`}
       className={`rounded-md border p-4 ${
         activePath.isCurrent
           ? "border-[var(--color-primary)] bg-[var(--color-surface)]"
@@ -49,7 +50,7 @@ function ActivePathCard({ activePath }: { activePath: ActivePathSummary }) {
         <ul className="mt-3 flex flex-col gap-2">
           {activePath.courses.map((course) => (
             <li key={course.slug}>
-              <ProgressBar label={course.title} {...course.progress} />
+              <ProgressBar label={`${course.title} progress`} {...course.progress} />
             </li>
           ))}
         </ul>
@@ -63,7 +64,7 @@ function ActivePathCard({ activePath }: { activePath: ActivePathSummary }) {
           backLabel={activePath.title}
         />
       </div>
-    </div>
+    </section>
   );
 }
 

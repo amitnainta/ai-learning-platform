@@ -33,23 +33,31 @@ test.describe("progress: dashboard percentages and FR-PATH-009 retention", () =>
 
     await page.goto("/dashboard");
 
-    const pathBar = page.getByRole("progressbar", {
+    // Scoped to the "current path" section — with the shared item already
+    // complete, the retained Executive path's own bars can otherwise show
+    // coincidentally identical counts/percentages later in this test, which
+    // would make an unscoped page-wide text search ambiguous.
+    const currentPathSection = page.getByRole("region", {
+      name: /technical builder.*zero knowledge — current path/i,
+    });
+
+    const pathBar = currentPathSection.getByRole("progressbar", {
       name: /technical builder.*zero knowledge progress/i,
     });
     await expect(pathBar).toHaveAttribute("aria-valuenow", "40");
-    await expect(page.getByText("2 of 5 items complete (40%)")).toBeVisible();
+    await expect(pathBar).toHaveAttribute("aria-valuetext", "2 of 5 items complete (40%)");
 
-    const course1Bar = page.getByRole("progressbar", {
+    const course1Bar = currentPathSection.getByRole("progressbar", {
       name: /ai foundations for builders progress/i,
     });
     await expect(course1Bar).toHaveAttribute("aria-valuenow", "33");
-    await expect(page.getByText("1 of 3 items complete (33%)")).toBeVisible();
+    await expect(course1Bar).toHaveAttribute("aria-valuetext", "1 of 3 items complete (33%)");
 
-    const course2Bar = page.getByRole("progressbar", {
+    const course2Bar = currentPathSection.getByRole("progressbar", {
       name: /getting started with machine learning progress/i,
     });
     await expect(course2Bar).toHaveAttribute("aria-valuenow", "50");
-    await expect(page.getByText("1 of 2 items complete (50%)")).toBeVisible();
+    await expect(course2Bar).toHaveAttribute("aria-valuetext", "1 of 2 items complete (50%)");
 
     // Switch to Executive / Non-Technical — Zero Knowledge, which shares
     // what-is-artificial-intelligence with the technical-builder path
@@ -74,8 +82,11 @@ test.describe("progress: dashboard percentages and FR-PATH-009 retention", () =>
     // The previously-followed Technical Builder path is still listed on the
     // dashboard with its retained percentage (FR-PATH-009).
     await page.goto("/dashboard");
-    await expect(page.getByText(/previously followed/i)).toBeVisible();
-    const retainedPathBar = page.getByRole("progressbar", {
+    const retainedSection = page.getByRole("region", {
+      name: /technical builder.*zero knowledge — previously followed path/i,
+    });
+    await expect(retainedSection).toBeVisible();
+    const retainedPathBar = retainedSection.getByRole("progressbar", {
       name: /technical builder.*zero knowledge progress/i,
     });
     await expect(retainedPathBar).toHaveAttribute("aria-valuenow", "40");

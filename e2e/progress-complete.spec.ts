@@ -24,8 +24,11 @@ test.describe("progress: mark complete", () => {
       .filter({ hasText: "What Is Artificial Intelligence?" });
     await expect(firstItemCard.getByText("Not started")).toBeVisible();
 
-    // Opening the lesson fires the auto-view beacon.
-    await page.getByRole("link", { name: /what is artificial intelligence/i }).click();
+    // Opening the lesson fires the auto-view beacon. Scoped to the item
+    // card's own link — the path page's <ResumeCard> also renders a
+    // "Start: What Is Artificial Intelligence?" link to the same URL for a
+    // fresh user, which would otherwise make this locator ambiguous.
+    await firstItemCard.getByRole("link", { name: /what is artificial intelligence/i }).click();
     await expect(page).toHaveURL("/lessons/what-is-artificial-intelligence");
 
     await page.goto("/paths/technical-builder/zero-knowledge");

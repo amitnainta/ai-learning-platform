@@ -15,6 +15,12 @@ import { useEffect, useRef } from "react";
  * FR-PROG-003's percentages and FR-PROG-002's resume target are computed
  * from. Renders nothing; swallows every error (a failed beacon must never
  * surface as an error to a learner reading a lesson).
+ *
+ * `keepalive: true`, the same technique `<CuratedOpenTracker>` uses for the
+ * identical purpose: a learner who opens a lesson and navigates away again
+ * within milliseconds (back button, another `<Link>`) would otherwise have
+ * this fetch cancelled mid-flight by the navigation before it reaches the
+ * server, silently dropping the auto-"in progress" write.
  */
 export function ViewTracker({ contentItemSlug }: { contentItemSlug: string }) {
   const firedRef = useRef(false);
@@ -32,6 +38,7 @@ export function ViewTracker({ contentItemSlug }: { contentItemSlug: string }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contentItemSlug, action: "view" }),
+      keepalive: true,
     }).catch(() => {
       // Deliberately swallowed — see the module comment.
     });

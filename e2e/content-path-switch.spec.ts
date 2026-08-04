@@ -28,10 +28,13 @@ test.describe("content: path switch", () => {
     await expect(page.getByRole("heading", { name: /welcome/i })).toBeVisible();
 
     // The shared item is reachable from the old (Technical Builder, Zero
-    // Knowledge) path.
+    // Knowledge) path. Exact match: the progress-tracking work item's
+    // <ResumeCard> on this page also renders a "Start: What Is Artificial
+    // Intelligence?" link to the same URL for a fresh user, which would
+    // otherwise make this locator ambiguous.
     await page.goto("/paths/technical-builder/zero-knowledge");
     await expect(
-      page.getByRole("link", { name: /what is artificial intelligence/i }),
+      page.getByRole("link", { name: "What Is Artificial Intelligence?", exact: true }),
     ).toBeVisible();
 
     // Switch to Executive / Non-Technical, Zero Knowledge from the dashboard.
@@ -47,7 +50,10 @@ test.describe("content: path switch", () => {
 
     // The shared item appears in the new path too, and both link to the
     // exact same lesson URL — proof it's a single row, not a duplicate.
-    const sharedItemLink = page.getByRole("link", { name: /what is artificial intelligence/i });
+    const sharedItemLink = page.getByRole("link", {
+      name: "What Is Artificial Intelligence?",
+      exact: true,
+    });
     await expect(sharedItemLink).toBeVisible();
     await expect(sharedItemLink).toHaveAttribute(
       "href",

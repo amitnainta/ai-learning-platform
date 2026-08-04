@@ -30,10 +30,16 @@ test.describe("progress: resume", () => {
     });
     await expect(startLink).toHaveAttribute("href", "/lessons/what-is-artificial-intelligence");
 
-    // Complete the first item via the real UI flow.
+    // Complete the first item via the real UI flow. The button's label
+    // flips optimistically (before the request resolves — decision #12's
+    // "applies the new state optimistically"), so wait for the aria-live
+    // confirmation instead, which only fires after the server confirms the
+    // write; otherwise navigating away immediately below can cancel the
+    // still-in-flight request.
     await page.goto("/lessons/what-is-artificial-intelligence");
     await page.getByRole("button", { name: /mark complete/i }).click();
     await expect(page.getByRole("button", { name: /mark as not complete/i })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(/marked/i);
 
     // Resume now names the second item (a curated card, no detail page) and
     // links to the course anchor.
@@ -79,7 +85,16 @@ test.describe("progress: resume", () => {
     }
 
     await page.goto("/dashboard");
-    await expect(page.getByText(/path complete/i)).toBeVisible();
+    // Every item shared by the Executive / Non-Technical path (elements-of-
+    // ai-course, google-ai-crash-course) got completed as a side effect of
+    // finishing the Technical Builder path above, so *both* paths correctly
+    // reach "Path complete" here (FR-PATH-009's retention, made visible) —
+    // scoped to the current path's own section rather than asserting a
+    // page-wide single match.
+    const currentPathSection = page.getByRole("region", {
+      name: /technical builder.*zero knowledge — current path/i,
+    });
+    await expect(currentPathSection.getByText(/path complete/i)).toBeVisible();
     await expect(page.getByRole("link", { name: /^resume:/i })).toHaveCount(0);
     await expect(page.getByRole("link", { name: /^start:/i })).toHaveCount(0);
   });
