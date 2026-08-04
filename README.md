@@ -9,7 +9,15 @@ Account and auth (registration, login/logout, password reset, role/level
 profile, data export/delete) is the first real product feature — see
 `docs/architecture/auth.md` for the decision record. Learning paths, courses,
 lessons, curated links, and the glossary are the second — see
-`docs/architecture/content.md` and `docs/content/authoring-guide.md`.
+`docs/architecture/content.md` and `docs/content/authoring-guide.md`. Progress
+tracking (per-item completion status, resuming a path or course from where a
+learner left off, and a real dashboard showing percent complete per path and
+course) is the third — see `docs/architecture/progress.md`. A signed-in
+learner sees their status on every item (not started / in progress /
+complete), marks lessons and curated resources complete from the lesson page
+or the item card, and gets a resume link back to the first unfinished item;
+progress on a shared item is retained automatically when switching between
+paths that both include it (FR-PATH-009).
 
 ## Stack
 
@@ -132,7 +140,13 @@ later as a cryptic Prisma connection error.
   `src/lib/content/__tests__/fixtures/`), content hashing, the pure
   create/update/unchanged/retire import planner, and the Markdown/glossary/
   item-card/lesson-video/path-switcher components — none of these touch a
-  database.
+  database. Progress tracking adds `src/lib/progress/percent.ts`'s pure
+  course/path percentage and resume-target computation (a 50-item/8-course
+  fixture proves the NFR-PERF-006 shape), mocked-Prisma tests for the
+  mutation and dashboard-query modules (the latter asserting a _fixed_ Prisma
+  call count), the `POST /api/progress` route, and the
+  ProgressBar/ProgressStatusBadge/ProgressControl/ResumeCard components —
+  also none of these touch a database.
 
 - **End-to-end** (`npm run test:e2e`): Playwright, one `chromium` project,
   against a **real local Postgres** (the account/auth journeys create,
@@ -173,6 +187,18 @@ later as a cryptic Prisma connection error.
   before `npm run test:e2e`. It's idempotent, so it's a no-op against an
   already-seeded shared dev database. The global teardown stays user-scoped
   only — it never deletes content rows.
+
+  Progress journeys: `e2e/progress-complete.spec.ts` (not-started -> auto-
+  in-progress -> complete -> persisted -> reopened, for both an original
+  lesson and a curated item, plus the anonymous no-controls/no-write case),
+  `e2e/progress-resume.spec.ts` (resume advances item by item then course by
+  course, ending in the path-complete state), and
+  `e2e/progress-dashboard.spec.ts` (exact dashboard percentages, plus
+  FR-PATH-009: a shared item stays complete across a role/level switch and
+  the previously-followed path is retained on the dashboard).
+  `e2e/helpers/db.ts`'s `findProgressForEmail()` asserts on rows the UI
+  doesn't expose; `cleanupTestUsers()` needs no change since
+  `Progress.userId` cascades.
 
 ## CI
 
@@ -223,9 +249,15 @@ uptime-monitor accounts is tracked as an explicit manual checklist in
   progress/rating attachment points the next work items inherit, review
   cadence, version history, dynamic rendering, and the sample-content
   notice) and its NFR mapping.
+- `docs/architecture/progress.md` — the progress-tracking decision record
+  (the `Progress` model, the observed-vs-asserted completion rule, the
+  client-beacon auto-"in progress" mechanism, read-time percentages and
+  resume-target selection, and the FR-PATH-009 retention verification) and
+  its FR/NFR mapping.
 - `docs/content/authoring-guide.md` — how to add/edit/retire content and get
-  it live, field by field, including the `glossary:` link convention and the
-  plain-language rules for zero-knowledge lessons.
+  it live, field by field, including the `glossary:` link convention, the
+  plain-language rules for zero-knowledge lessons, and the "never rename a
+  published item's slug" rule progress tracking depends on.
 - `docs/content/taxonomy.md` — the human-readable tagging taxonomy (roles,
   levels, topics, formats, source types); must match `content/taxonomy.yaml`.
 - `docs/architecture/disaster-recovery.md` — DR process, failure scenarios, and
@@ -253,6 +285,7 @@ src/
     api/
       auth/[...all]/       # Better Auth handler (GET/POST)
       account/             # PATCH profile, GET export, DELETE account
+      progress/             # POST /api/progress — view/complete/reopen
       health/              # GET /api/health — uptime monitor + CI smoke target
     layout.tsx              # root layout — SiteHeader, skip-to-content link
     page.tsx                 # public landing page
@@ -262,14 +295,18 @@ src/
     account/             # role-level form, delete-account form, verify-email banner
     content/             # Markdown renderer, glossary link, external link, tag list,
                           # sample-content badge, item card, lesson video, path switcher, course summary
+    progress/             # ProgressBar, ProgressStatusBadge, ProgressControl, ViewTracker,
+                           # CuratedOpenTracker, ResumeCard
     layout/site-header.tsx
     ui/form-field.tsx     # labeled input primitive (NFR-A11Y-004)
   lib/
     auth/                # password hashing, Better Auth options/instance/client, session helpers
     content/             # taxonomy/route constants, frontmatter/loader/hash/plan-import/import, queries
+    progress/             # status vocabulary, pure percent/resume computation, mutations, queries
     mail/                 # mailer transport + templates
     validation/account.ts  # Zod schemas for every auth/account form and route
     validation/content.ts   # Zod schemas for every content-pack file
+    validation/progress.ts   # Zod schema for POST /api/progress
     env.ts                  # zod-validated environment accessor
     prisma.ts                # hot-reload/serverless-safe Prisma client singleton
   middleware.ts            # optimistic cookie-presence route protection (UX fast path only)
@@ -277,17 +314,17 @@ src/
   instrumentation-client.ts # Next.js client-bundle hook — loads Sentry client init
   test/setup.ts             # Vitest + jest-dom setup
 prisma/
-  schema.prisma           # auth tables + Path/Course/ContentItem/Topic/GlossaryTerm etc.
+  schema.prisma           # auth + Path/Course/ContentItem/Topic/GlossaryTerm + Progress tables
   migrations/              # committed migration history
 content/                  # the content pack — see docs/content/authoring-guide.md
   taxonomy.yaml, roles/, paths/, courses/, items/, glossary/
 scripts/
   import-content.ts        # CLI: npm run content:import / content:check
 e2e/
-  helpers/                # db.ts (test users, cleanup), mail.ts (outbox reader), register.ts
+  helpers/                # db.ts (test users, cleanup, findProgressForEmail), mail.ts (outbox reader), register.ts
   global-setup.ts          # imports content/** before the suite (idempotent)
   global-teardown.ts       # removes e2e-created users after the run (content-safe)
-  smoke.spec.ts, auth-*.spec.ts, account-*.spec.ts, content-*.spec.ts
+  smoke.spec.ts, auth-*.spec.ts, account-*.spec.ts, content-*.spec.ts, progress-*.spec.ts
 sentry.server.config.ts
 sentry.edge.config.ts     # per-runtime Sentry init (no-op without a DSN)
 docs/

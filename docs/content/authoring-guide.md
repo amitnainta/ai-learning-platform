@@ -247,6 +247,49 @@ the one honest signal telling a learner what they're reading hasn't been
 checked yet. Do this deliberately, as a single, recorded decision — not
 silently as part of an unrelated content update.
 
+## Never rename a published item's slug
+
+`slug` is the one field on a content item that must never change once the
+item has been imported and a learner could plausibly have visited it. The
+importer (`src/lib/content/import.ts`) treats a slug purely as identity: a
+new slug is a _new_ item (a new `ContentItem.id`), not an edit to the old
+one. Renaming `content/items/my-lesson.md`'s `slug` from `my-lesson` to
+`my-better-lesson-title` and re-importing does exactly what
+`docs/architecture/content.md` decision #2 says it should — it retires the
+old row (`my-lesson`, excluded from every published listing, its id
+preserved) and creates a brand-new row (`my-better-lesson-title`, a new
+id).
+
+That's the correct behaviour for _content_, but it's a trap for **progress**
+(`docs/architecture/progress.md`, the progress-tracking work item):
+`Progress` rows key on `ContentItem.id`, not on slug. A learner who
+completed `my-lesson` keeps their `Progress` row — nothing deletes it — but
+it now points at a _retired_, unreachable item. Their completion isn't
+lost from the database, but it silently drops out of every percentage
+(FR-PROG-003's read-time computation excludes retired items from both
+numerator and denominator — `docs/architecture/progress.md` decision #5),
+and the item they actually finished is gone from their resume path. The
+same applies to a course or path `slug` and any future rating/certificate
+that comes to key on it.
+
+**If a rename is genuinely unavoidable** (a typo in the URL-visible slug, a
+legal/naming change), the safe procedure is:
+
+1. Keep the file name and `slug` as they are for anything already live —
+   resist the urge to "clean it up" as part of an unrelated content edit.
+2. If the slug truly must change, do it as its own deliberate, recorded
+   step (a dedicated commit/PR, not folded into a content refresh), and
+   flag it to whoever owns the progress-tracking item's backlog — a
+   rename-mapping mechanism in the importer is the correct fix, not
+   something to work around per-rename.
+3. Never reuse a retired slug for an unrelated new item — the importer will
+   happily un-retire and repurpose it (decision #2), which would attach a
+   totally different item to any progress/rating rows still pointing at
+   the old id.
+
+Titles, summaries, body text, tags, and every other field are safe to edit
+freely and often — this rule is about the `slug` field specifically.
+
 ## Review cadence (NFR-MAINT-002/003) — the human process
 
 `reviewCadenceDays` and the derived `nextReviewDueAt` are stored on every
