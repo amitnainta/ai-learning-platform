@@ -130,6 +130,63 @@ describe("getDashboardProgress — NFR-PERF-006 fixed query count", () => {
     expect(result.activePaths[0]?.isCurrent).toBe(true);
     expect(result.activePaths[0]?.progress.totalCount).toBe(56);
     expect(result.activePaths[0]?.progress.completedCount).toBe(0); // fixture rows are IN_PROGRESS, not COMPLETE
+    expect(result.hasCurrentPath).toBe(true);
+  });
+
+  // B1 regression coverage: ENGINEERING_LEADER/INVESTOR are selectable
+  // roles with no published R1 path, so `getPathForRoleLevel` resolves to
+  // `null` even though the user's role/level fields are both set.
+  // `hasCurrentPath` must reflect that a path was *not* resolved so the
+  // dashboard can fall back correctly (src/app/(app)/dashboard/page.tsx).
+  it("reports hasCurrentPath: false when the user's role/level has no published path, and no progress means no retained paths either", async () => {
+    getPathForRoleLevelMock.mockResolvedValue(null);
+    progressFindManyMock.mockResolvedValue([]);
+    const { getDashboardProgress } = await import("../queries");
+
+    const user = {
+      id: "user-3",
+      roleArchetype: "ENGINEERING_LEADER" as const,
+      level: "ZERO_KNOWLEDGE" as const,
+    };
+    const result = await getDashboardProgress(user);
+
+    expect(result.hasCurrentPath).toBe(false);
+    expect(result.activePaths).toHaveLength(0);
+  });
+
+  it("reports hasCurrentPath: false but still surfaces a previously-followed path with progress", async () => {
+    getPathForRoleLevelMock.mockResolvedValue(null);
+    progressFindManyMock.mockResolvedValue([
+      {
+        contentItemId: "item-0",
+        status: "IN_PROGRESS",
+        lastViewedAt: new Date(),
+        completedAt: null,
+      },
+    ]);
+    pathFindManyMock.mockResolvedValue([
+      {
+        id: "path-2",
+        slug: "technical-builder-zero-knowledge",
+        title: "Technical Builder — Zero Knowledge",
+        roleArchetype: "TECHNICAL_BUILDER",
+        level: "ZERO_KNOWLEDGE",
+        courses: FIXTURE_COURSES,
+      },
+    ]);
+    const { getDashboardProgress } = await import("../queries");
+
+    const user = {
+      id: "user-4",
+      roleArchetype: "ENGINEERING_LEADER" as const,
+      level: "ZERO_KNOWLEDGE" as const,
+    };
+    const result = await getDashboardProgress(user);
+
+    expect(result.hasCurrentPath).toBe(false);
+    expect(result.activePaths).toHaveLength(1);
+    expect(result.activePaths[0]?.isCurrent).toBe(false);
+    expect(result.activePaths[0]?.slug).toBe("technical-builder-zero-knowledge");
   });
 
   it("issues no progress query at all for a user with no progress rows, and no retained-path discovery query", async () => {

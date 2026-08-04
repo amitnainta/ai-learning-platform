@@ -79,13 +79,28 @@ function ActivePathCard({ activePath }: { activePath: ActivePathSummary }) {
 export default async function DashboardPage() {
   const user = await requireOnboardedUser("/dashboard");
 
-  const hasPath =
-    Boolean(user.roleArchetype) && user.roleArchetype !== "NOT_SURE_YET" && user.level;
   const [dashboardProgress, roleProfiles] = await Promise.all([
     getDashboardProgress(user),
     listRolePaths(),
   ]);
-  const { activePaths } = dashboardProgress;
+  const { activePaths, hasCurrentPath } = dashboardProgress;
+
+  // B1 fix: the fallback must branch on whether a path was actually
+  // *resolved* for the user, not merely on whether role/level fields are
+  // populated. `ENGINEERING_LEADER` and `INVESTOR` are selectable roles
+  // with no published R1 path, so a user can have both fields set and
+  // still have no current path. Three real cases:
+  //  (a) no role/level, or NOT_SURE_YET -> always show the browse prompt
+  //      (unchanged onboarding behaviour).
+  //  (b) role/level set and a path exists for it -> `hasCurrentPath` is
+  //      true, never show the prompt.
+  //  (c) role/level set but no path exists for that combination -> show
+  //      the prompt *unless* the user has previously-followed paths with
+  //      progress (decision #7), in which case those path cards are shown
+  //      instead of a dead end.
+  const roleOrLevelUnset =
+    !user.roleArchetype || user.roleArchetype === "NOT_SURE_YET" || !user.level;
+  const showBrowsePrompt = roleOrLevelUnset || (!hasCurrentPath && activePaths.length === 0);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -98,7 +113,7 @@ export default async function DashboardPage() {
         <dd className="text-[var(--color-text)]">{user.level}</dd>
       </dl>
 
-      {!hasPath ? (
+      {showBrowsePrompt ? (
         <div className="mt-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <h2 className="text-lg font-medium text-[var(--color-text)]">Browse learning paths</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">

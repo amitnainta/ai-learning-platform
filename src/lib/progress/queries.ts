@@ -202,6 +202,16 @@ export interface DashboardProgress {
   progressMap: ProgressMap;
   /** Current path first (when the user has one), then retained paths (decision #7), most-recently-touched first. */
   activePaths: ActivePathSummary[];
+  /**
+   * Whether a *published path actually exists* for the user's current
+   * role/level — i.e. whether `getPathForRoleLevel` resolved a path, not
+   * merely whether the user has role/level fields set. `ENGINEERING_LEADER`
+   * and `INVESTOR` are selectable roles with no R1 path, so a user can have
+   * a real role and level and still have `hasCurrentPath === false` (B1
+   * fix). The dashboard uses this, combined with `activePaths`, to decide
+   * whether to show the "no path available, browse paths" fallback.
+   */
+  hasCurrentPath: boolean;
 }
 
 /**
@@ -220,11 +230,11 @@ export const getDashboardProgress = cache(
   }): Promise<DashboardProgress> => {
     const progressMap = await getProgressMapForUser(user.id);
 
-    const hasCurrentPath =
+    const roleAndLevelSet =
       Boolean(user.roleArchetype) && user.roleArchetype !== "NOT_SURE_YET" && Boolean(user.level);
 
     const [currentPathDetail, retainedPaths] = await Promise.all([
-      hasCurrentPath && user.roleArchetype && user.level
+      roleAndLevelSet && user.roleArchetype && user.level
         ? getPathForRoleLevel(user.roleArchetype, user.level)
         : Promise.resolve(null),
       listActivePathsForUser(user, progressMap),
@@ -236,6 +246,6 @@ export const getDashboardProgress = cache(
     }
     activePaths.push(...retainedPaths);
 
-    return { progressMap, activePaths };
+    return { progressMap, activePaths, hasCurrentPath: currentPathDetail !== null };
   },
 );

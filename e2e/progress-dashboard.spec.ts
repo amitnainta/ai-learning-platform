@@ -92,3 +92,69 @@ test.describe("progress: dashboard percentages and FR-PATH-009 retention", () =>
     await expect(retainedPathBar).toHaveAttribute("aria-valuenow", "40");
   });
 });
+
+// B1 regression coverage: ENGINEERING_LEADER and INVESTOR are selectable
+// roles (role-level-form.tsx) with no published R1 path
+// (content/paths/ only covers technical-builder-* and
+// executive-non-technical-*). Before the fix, `getPathForRoleLevel()`
+// returning null for these users was masked by a `hasPath` check that only
+// looked at whether role/level fields were set, so they saw a dashboard
+// with no path cards and no "browse paths" fallback — a dead end.
+test.describe("progress: dashboard fallback when the user's role/level has no published path", () => {
+  test("a role with no path and no prior progress sees the browse-paths fallback, not a dead end", async ({
+    page,
+  }) => {
+    const email = uniqueTestEmail("progress-dashboard-no-path");
+    await registerAndOnboard(
+      page.request,
+      { email, password: PASSWORD, name: "No Path User" },
+      { roleArchetype: "ENGINEERING_LEADER", level: "ZERO_KNOWLEDGE" },
+    );
+
+    await page.goto("/dashboard");
+
+    await expect(page.getByRole("heading", { name: "Browse learning paths" })).toBeVisible();
+    await expect(
+      page.getByText("No path is available for your current role and level yet."),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /browse paths/i })).toBeVisible();
+
+    // No dead end: no stray progress region rendered either.
+    await expect(page.getByRole("region", { name: /— current path/i })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: /— previously followed path/i })).toHaveCount(0);
+  });
+
+  test("a role with no path but progress on a previously-followed path still sees that path card, not the fallback", async ({
+    page,
+  }) => {
+    const email = uniqueTestEmail("progress-dashboard-no-path-retained");
+    await registerAndOnboard(
+      page.request,
+      { email, password: PASSWORD, name: "No Path Retained User" },
+      { roleArchetype: "TECHNICAL_BUILDER", level: "ZERO_KNOWLEDGE" },
+    );
+
+    const response = await page.request.post("/api/progress", {
+      data: { contentItemSlug: "what-is-artificial-intelligence", action: "complete" },
+    });
+    expect(response.ok()).toBe(true);
+
+    // Switch to a role with no published path — the user keeps their
+    // Technical Builder progress, which decision #7 says must stay visible.
+    const profileResponse = await page.request.patch("/api/account/profile", {
+      data: { roleArchetype: "ENGINEERING_LEADER", level: "ZERO_KNOWLEDGE" },
+    });
+    expect(profileResponse.ok()).toBe(true);
+
+    await page.goto("/dashboard");
+
+    const retainedSection = page.getByRole("region", {
+      name: /technical builder.*zero knowledge — previously followed path/i,
+    });
+    await expect(retainedSection).toBeVisible();
+
+    // The browse-paths fallback is not needed once a retained path with
+    // progress is shown.
+    await expect(page.getByRole("heading", { name: "Browse learning paths" })).toHaveCount(0);
+  });
+});
