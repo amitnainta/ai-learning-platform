@@ -8,6 +8,12 @@ import { Markdown } from "@/components/content/markdown";
 import { TagList } from "@/components/content/tag-list";
 import { SampleContentBadge } from "@/components/content/sample-content-badge";
 import { LessonVideo } from "@/components/content/lesson-video";
+import { getCurrentUser } from "@/lib/auth/session";
+import { getProgressMapForUser } from "@/lib/progress/queries";
+import { displayStatusFor } from "@/lib/progress/status";
+import { ViewTracker } from "@/components/progress/view-tracker";
+import { ProgressStatusBadge } from "@/components/progress/progress-status-badge";
+import { ProgressControl } from "@/components/progress/progress-control";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +50,10 @@ export async function generateMetadata({
 // sample-content banner, the optional video, the rendered body with
 // contextual glossary links, and previous/next links within its course.
 // `notFound()` for a curated or retired slug (decision #10 — curated items
-// have no detail page).
+// have no detail page). FR-PROG-001: a signed-in visitor gets a
+// `<ViewTracker>` (client mount beacon — decision #4, never a server-render
+// write) and a completion section; an anonymous visitor gets a sign-in
+// hint and no progress write at all.
 export default async function LessonPage({ params }: { params: Promise<LessonPageParams> }) {
   const { slug } = await params;
   const lesson = await getLessonBySlug(slug);
@@ -54,6 +63,11 @@ export default async function LessonPage({ params }: { params: Promise<LessonPag
 
   const glossarySlugs = findGlossaryLinks(lesson.body);
   const glossaryTerms = await getGlossaryTermsBySlugs(glossarySlugs);
+
+  const user = await getCurrentUser();
+  const progressStatus = user
+    ? displayStatusFor((await getProgressMapForUser(user.id)).get(lesson.id) ?? undefined)
+    : null;
 
   // Previous/next within the first course this lesson belongs to. Curated
   // neighbours are skipped — they have no detail page (decision #10).
@@ -97,6 +111,29 @@ export default async function LessonPage({ params }: { params: Promise<LessonPag
       />
 
       <Markdown content={lesson.body} glossaryTerms={glossaryTerms} />
+
+      {user && progressStatus ? (
+        <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-6">
+          <ProgressStatusBadge status={progressStatus} />
+          <ProgressControl
+            contentItemSlug={lesson.slug}
+            contentItemTitle={lesson.title}
+            initialStatus={progressStatus}
+          />
+        </div>
+      ) : (
+        <p className="mt-8 border-t border-[var(--color-border)] pt-6 text-sm text-[var(--color-text-muted)]">
+          <Link
+            href={`/sign-in?next=${encodeURIComponent(lessonUrl(lesson.slug))}`}
+            className="text-[var(--color-primary)] hover:underline"
+          >
+            Sign in
+          </Link>{" "}
+          to track your progress through this lesson.
+        </p>
+      )}
+
+      {user ? <ViewTracker contentItemSlug={lesson.slug} /> : null}
 
       {previous || next ? (
         <nav className="mt-10 flex items-center justify-between border-t border-[var(--color-border)] pt-4 text-sm">

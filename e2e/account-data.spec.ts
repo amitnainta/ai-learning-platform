@@ -18,6 +18,13 @@ test.describe("account data export and deletion", () => {
       name: "Data Rights User",
     });
 
+    // Decision #9 (progress-tracking): complete one item first, so the
+    // export's `progress` array has something real to assert on.
+    const completeResponse = await page.request.post("/api/progress", {
+      data: { contentItemSlug: "what-is-artificial-intelligence", action: "complete" },
+    });
+    expect(completeResponse.ok()).toBe(true);
+
     await page.goto("/account");
 
     const [download] = await Promise.all([
@@ -33,6 +40,15 @@ test.describe("account data export and deletion", () => {
     expect(exportPayload.profile.email).toBe(email);
     expect(contents.toLowerCase()).not.toContain('"password"');
     expect(contents).not.toContain("token");
+
+    // Decision #9: the export includes a progress entry for the completed
+    // item, addressed by slug (never the underlying cuid).
+    expect(exportPayload.progress).toContainEqual(
+      expect.objectContaining({
+        slug: "what-is-artificial-intelligence",
+        status: "COMPLETE",
+      }),
+    );
 
     // Danger zone: typed confirmation must match exactly before the
     // button enables.

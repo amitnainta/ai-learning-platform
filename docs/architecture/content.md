@@ -193,6 +193,15 @@ across re-imports (decision #2's upsert-by-slug, decision #8's version
 tracking) — a re-import never rotates an id that a `Progress`/`Rating`/
 `Certificate` row already points to.
 
+**Commitment honoured**: the progress-tracking work item verified this
+claim against the real importer code (not taken on trust) and shipped
+`Progress` exactly as promised here — see
+`docs/architecture/progress.md`'s "Verification of `learning-paths-content`
+decision #6" section for the check, including the one caveat it surfaced
+(a published item's `slug`, not just its id, must stay stable — see the
+"Never rename a published item's slug" rule in
+`docs/content/authoring-guide.md`).
+
 ## 7. Review cadence — stored per item, derived at import
 
 **Decision**: `sourceType = CURATED` defaults to `reviewCadenceDays = 90`

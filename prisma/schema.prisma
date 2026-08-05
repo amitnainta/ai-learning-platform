@@ -61,6 +61,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   verifications Verification[]
+  progress      Progress[]
 
   @@unique([email])
   @@index([createdAt])
@@ -341,6 +342,7 @@ model ContentItem {
 
   courses  CourseItem[]
   versions ContentItemVersion[]
+  progress Progress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -410,4 +412,71 @@ model GlossaryTerm {
 
   @@index([term])
   @@map("glossary_term")
+}
+
+// -----------------------------------------------------------------------
+// Progress-tracking model (progress-tracking work item).
+//
+// "Not started" is deliberately the absence of a `Progress` row, not a
+// third enum value (decision #2, factory/work/progress-tracking/PLAN.md) —
+// materialising it for every (user, item) pair would be 500M+ meaningless
+// rows at the NFR-SCALE-002 year-one target and would force the content
+// importer to fan out a write per user on every new item. The read layer
+// (src/lib/progress/status.ts) maps an absent row to the display value
+// "NOT_STARTED".
+//
+// Keyed on `ContentItem.id`, never on `CourseItem.id`/`PathCourse.id`: the
+// importer's `rewriteCourseOrdering()`/`rewritePathOrdering()`
+// (src/lib/content/import.ts) delete and recreate those join rows on every
+// course/path update, so their ids rotate on a routine content edit — a
+// `Progress` row pointing at one would be orphaned. `ContentItem.id` is the
+// only id in this schema that's stable across re-imports (see the
+// "Verification of the learning-paths-content purely additive claim"
+// section of the plan). This is also what makes FR-PATH-009 (progress
+// retained across paths that share an item) true by construction: one
+// content item is one row, referenced from as many paths as contain it.
+//
+// Deliberately absent: any `Rating`, `Certificate`, `Streak`, `Badge`, or
+// `Bookmark` model, and any denormalized percentage column on `Course`,
+// `Path`, or `User` — percentages and resume targets are computed at read
+// time (src/lib/progress/percent.ts), the same precedent
+// learning-paths-content set for course/path duration.
+// -----------------------------------------------------------------------
+
+// Two values only — "not started" is the absence of a row, not a value of
+// this enum (decision #2).
+enum ProgressStatus {
+  IN_PROGRESS
+  COMPLETE
+}
+
+// One row per (user, content item) the user has ever viewed or completed
+// (decision #1: "in progress" is observed via a view, "complete" is always
+// an explicit, reversible learner action — never inferred).
+model Progress {
+  id            String         @id @default(cuid())
+  userId        String
+  contentItemId String
+  status        ProgressStatus @default(IN_PROGRESS)
+  // Bumped by every `view` action; also the recency signal that orders the
+  // dashboard's active-path list (decision #6) and the future FR-PROG-004
+  // streak's activity signal.
+  lastViewedAt  DateTime       @default(now())
+  // Stamped once, on first completion; never moved by a re-click (decision
+  // #3). Nullable — cleared by `reopen`. Authoritative for a future
+  // FR-CERT certificate issuance timestamp.
+  completedAt   DateTime?
+
+  // `createdAt` doubles as "started at" — a row only ever comes into
+  // existence at the moment of first view, so no separate column is needed.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentItemId])
+  @@index([userId, lastViewedAt])
+  @@index([contentItemId])
+  @@map("progress")
 }

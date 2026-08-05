@@ -42,6 +42,23 @@ const sessionFindManyMock = vi.fn().mockResolvedValue([
   },
 ]);
 
+// progress-tracking work item (decision #9): the export gains a `progress`
+// array. One fixture row here so the "contains a progress entry" shape is
+// exercised at the unit level too — the full journey (complete an item,
+// download, assert it's present) is e2e-covered in account-data.spec.ts.
+const progressFindManyMock = vi.fn().mockResolvedValue([
+  {
+    status: "COMPLETE",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    lastViewedAt: new Date("2026-01-02T00:00:00.000Z"),
+    completedAt: new Date("2026-01-02T00:00:00.000Z"),
+    contentItem: {
+      slug: "what-is-artificial-intelligence",
+      title: "What Is Artificial Intelligence?",
+    },
+  },
+]);
+
 vi.mock("@/lib/auth/session", () => ({
   requireUser: vi.fn().mockResolvedValue(MOCK_USER),
 }));
@@ -50,6 +67,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUniqueOrThrow: (...args: unknown[]) => findUniqueOrThrowMock(...args) },
     session: { findMany: (...args: unknown[]) => sessionFindManyMock(...args) },
+    progress: { findMany: (...args: unknown[]) => progressFindManyMock(...args) },
   },
 }));
 
@@ -74,6 +92,23 @@ describe("GET /api/account/export", () => {
       level: MOCK_USER.level,
     });
     expect(body.sessions).toHaveLength(1);
+  });
+
+  it("includes a progress array with slug/title/status, never a content-item id (decision #9)", async () => {
+    const { GET } = await import("../export/route");
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.progress).toEqual([
+      {
+        slug: "what-is-artificial-intelligence",
+        title: "What Is Artificial Intelligence?",
+        status: "COMPLETE",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastViewedAt: "2026-01-02T00:00:00.000Z",
+        completedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
   });
 
   it("never includes a password field anywhere in the payload", async () => {

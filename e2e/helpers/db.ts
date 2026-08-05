@@ -63,6 +63,29 @@ export async function countVerificationRowsForUserId(userId: string): Promise<nu
   return prisma.verification.count({ where: { userId } });
 }
 
+/**
+ * A test user's progress rows joined to their content-item slugs, for
+ * assertions the UI does not expose directly (e.g. `completedAt` being
+ * non-null, or that exactly one row exists) — task 31,
+ * factory/work/progress-tracking/PLAN.md. `cleanupTestUsers()` above needs
+ * no change for `Progress`: `Progress.userId` is `onDelete: Cascade`
+ * (prisma/schema.prisma), so deleting the test `User` row already removes
+ * every progress row it owns. The teardown must still never touch content
+ * rows (`ContentItem`/`Course`/`Path` etc. are shared, seeded fixtures —
+ * see e2e/global-teardown.ts and global-setup.ts), and this helper doesn't
+ * either: it only reads.
+ */
+export async function findProgressForEmail(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return [];
+  }
+  return prisma.progress.findMany({
+    where: { userId: user.id },
+    include: { contentItem: { select: { slug: true, title: true } } },
+  });
+}
+
 export async function disconnectTestDb(): Promise<void> {
   await prisma.$disconnect();
 }

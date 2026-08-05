@@ -2,11 +2,20 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getPathForRoleLevel, listRolePaths } from "@/lib/content/queries";
-import { parseLevelSegment, parseRoleSegment } from "@/lib/content/routes";
+import { parseLevelSegment, parseRoleSegment, pathUrl } from "@/lib/content/routes";
 import { Markdown } from "@/components/content/markdown";
 import { CourseSummary } from "@/components/content/course-summary";
 import { ContentItemCard } from "@/components/content/content-item-card";
 import { PathSwitcher } from "@/components/content/path-switcher";
+import { getProgressMapForUser } from "@/lib/progress/queries";
+import { displayStatusFor } from "@/lib/progress/status";
+import {
+  computeCourseProgress,
+  computePathProgress,
+  findResumeTarget,
+} from "@/lib/progress/percent";
+import { ProgressBar } from "@/components/progress/progress-bar";
+import { ResumeCard } from "@/components/progress/resume-card";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +78,22 @@ export default async function PathPage({ params }: { params: Promise<PathPagePar
 
   const isCurrentPath = user?.roleArchetype === roleArchetype && user?.level === path.level;
 
+  const progressMap = user ? await getProgressMapForUser(user.id) : null;
+  const progressCourses = path.courses.map((pathCourse) => ({
+    slug: pathCourse.course.slug,
+    title: pathCourse.course.title,
+    position: pathCourse.position,
+    items: pathCourse.course.items.map((item) => ({
+      id: item.contentItem.id,
+      slug: item.contentItem.slug,
+      title: item.contentItem.title,
+      sourceType: item.contentItem.sourceType,
+      position: item.position,
+    })),
+  }));
+  const pathProgress = progressMap ? computePathProgress(progressCourses, progressMap) : null;
+  const resumeTarget = progressMap ? findResumeTarget(progressCourses, progressMap) : null;
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       <h1 className="mb-2 text-2xl font-semibold text-[var(--color-text)]">{path.title}</h1>
@@ -101,45 +126,86 @@ export default async function PathPage({ params }: { params: Promise<PathPagePar
         />
       </div>
 
+      {pathProgress ? (
+        <div className="mb-6">
+          <ProgressBar label={`${path.title} progress`} {...pathProgress} />
+        </div>
+      ) : null}
+
+      {resumeTarget ? (
+        <div className="mb-8">
+          <ResumeCard
+            target={resumeTarget}
+            scope="path"
+            backHref={pathUrl(roleArchetype, path.level)}
+            backLabel={path.title}
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-8">
-        {path.courses.map((pathCourse) => (
-          <section key={pathCourse.id}>
-            <CourseSummary
-              course={{
-                slug: pathCourse.course.slug,
-                title: pathCourse.course.title,
-                summary: pathCourse.course.summary,
-                items: pathCourse.course.items.map((item) => ({
-                  estimatedMinutes: item.contentItem.estimatedMinutes,
-                })),
-              }}
-            />
-            <ol className="mt-4 flex flex-col gap-3">
-              {pathCourse.course.items.map((item, index) => (
-                <ContentItemCard
-                  key={item.id}
-                  position={index + 1}
-                  item={{
-                    slug: item.contentItem.slug,
-                    title: item.contentItem.title,
-                    summary: item.contentItem.summary,
-                    sourceType: item.contentItem.sourceType,
-                    roles: item.contentItem.roles,
-                    level: item.contentItem.level,
-                    format: item.contentItem.format,
+        {path.courses.map((pathCourse) => {
+          const courseItems = pathCourse.course.items.map((item) => ({
+            id: item.contentItem.id,
+            slug: item.contentItem.slug,
+            title: item.contentItem.title,
+            sourceType: item.contentItem.sourceType,
+            position: item.position,
+          }));
+          const courseProgress = progressMap
+            ? computeCourseProgress(courseItems, progressMap)
+            : null;
+
+          return (
+            <section key={pathCourse.id}>
+              <CourseSummary
+                course={{
+                  slug: pathCourse.course.slug,
+                  title: pathCourse.course.title,
+                  summary: pathCourse.course.summary,
+                  items: pathCourse.course.items.map((item) => ({
                     estimatedMinutes: item.contentItem.estimatedMinutes,
-                    lastReviewedAt: item.contentItem.lastReviewedAt,
-                    topics: item.contentItem.topics,
-                    externalUrl: item.contentItem.externalUrl,
-                    sourcePublisher: item.contentItem.sourcePublisher,
-                    sourceAuthor: item.contentItem.sourceAuthor,
-                    attributionNote: item.contentItem.attributionNote,
-                  }}
-                />
-              ))}
-            </ol>
-          </section>
-        ))}
+                  })),
+                }}
+              />
+              {courseProgress ? (
+                <div className="mt-3">
+                  <ProgressBar label={`${pathCourse.course.title} progress`} {...courseProgress} />
+                </div>
+              ) : null}
+              <ol className="mt-4 flex flex-col gap-3">
+                {pathCourse.course.items.map((item, index) => (
+                  <ContentItemCard
+                    key={item.id}
+                    position={index + 1}
+                    item={{
+                      slug: item.contentItem.slug,
+                      title: item.contentItem.title,
+                      summary: item.contentItem.summary,
+                      sourceType: item.contentItem.sourceType,
+                      roles: item.contentItem.roles,
+                      level: item.contentItem.level,
+                      format: item.contentItem.format,
+                      estimatedMinutes: item.contentItem.estimatedMinutes,
+                      lastReviewedAt: item.contentItem.lastReviewedAt,
+                      topics: item.contentItem.topics,
+                      externalUrl: item.contentItem.externalUrl,
+                      sourcePublisher: item.contentItem.sourcePublisher,
+                      sourceAuthor: item.contentItem.sourceAuthor,
+                      attributionNote: item.contentItem.attributionNote,
+                    }}
+                    progress={
+                      progressMap
+                        ? { status: displayStatusFor(progressMap.get(item.contentItem.id)) }
+                        : undefined
+                    }
+                    showControl={Boolean(progressMap)}
+                  />
+                ))}
+              </ol>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
