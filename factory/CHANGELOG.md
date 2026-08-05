@@ -4,3 +4,4 @@
 - 2026-08-02 — user-accounts-auth — Registration, login/logout, password reset, role/level onboarding, personal-data export, and account deletion, via Better Auth with database-backed sessions/rate limiting, argon2id hashing, and Tailwind CSS v4.
 - 2026-08-02 — fix-ci-mail-transport-leak — Fixed a pre-existing CI env-leak bug (MAIL_TRANSPORT scoping) that was breaking mailer unit tests on main; first fully green Actions run on this repo.
 - 2026-08-02 — learning-paths-content — Content data model (Path/Course/ContentItem/GlossaryTerm), a git-versioned content pack with an idempotent importer, markdown rendering with contextual glossary links, and public browse routes (/paths, /courses, /lessons, /glossary).
+- 2026-08-05 — progress-tracking — Per-item completion tracking, resume-from-where-you-left-off, and a real dashboard with per-path/per-course percent complete; completes the observable half of FR-PATH-009's progress retention across path switches.
