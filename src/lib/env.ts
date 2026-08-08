@@ -29,7 +29,7 @@ const envSchema = z.object({
     .string()
     .min(1, "APP_URL is required")
     .url("APP_URL must be a valid URL")
-    .default("http://localhost:3000"),
+    .default("http://localhost:3030"),
   BETTER_AUTH_SECRET: z
     .string()
     .min(

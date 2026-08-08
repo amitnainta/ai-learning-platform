@@ -52,7 +52,8 @@ cp .env.example .env.local
 #   DATABASE_URL           — pooled Postgres connection string
 #   DIRECT_URL             — direct (unpooled) Postgres connection string, used by Prisma Migrate
 #   SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN — optional locally; Sentry no-ops when unset
-#   APP_URL                — defaults to http://localhost:3000
+#   APP_URL                — defaults to http://localhost:3030 (see ../ports.md
+#                            for this machine's local port assignments)
 #   BETTER_AUTH_SECRET     — required, min 32 chars; generate with `openssl rand -base64 32`
 #   BETTER_AUTH_URL        — optional; defaults to APP_URL
 #   RESEND_API_KEY         — optional locally; mail falls back to the console transport when unset
@@ -70,7 +71,7 @@ npm run content:import   # applies it — idempotent, safe to re-run
 npm run dev
 ```
 
-The app serves at http://localhost:3000. `/` is a public landing page; `/paths`,
+The app serves at http://localhost:3030. `/` is a public landing page; `/paths`,
 `/paths/[role]`, `/paths/[role]/[level]`, `/courses/[slug]`, `/lessons/[slug]`,
 `/glossary`, and `/glossary/[slug]` are the public content surface (readable
 with no session — FR-ACC-008; skipping step 4 above just means those pages
