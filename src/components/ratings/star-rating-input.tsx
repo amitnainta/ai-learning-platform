@@ -1,0 +1,64 @@
+"use client";
+
+/**
+ * FR-RATE-001/003's star control (task 14), accessible by construction
+ * (NFR-A11Y-002/-004): a native `<fieldset>`/`<legend>` radio group, not a
+ * custom div-based star widget. Five `<input type="radio">`s with
+ * visually-hidden labels ("1 star" .. "5 stars") give arrow-key navigation,
+ * roving focus, and screen-reader group semantics for free — nothing here
+ * is reimplemented. The selected value is also rendered as visible text
+ * ("4 out of 5") so nothing depends on glyph shape or colour alone.
+ */
+
+const STAR_VALUES = [1, 2, 3, 4, 5] as const;
+
+export function StarRatingInput({
+  name,
+  value,
+  onChange,
+  disabled,
+  legend = "Your rating",
+}: {
+  name: string;
+  value: number | null;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  legend?: string;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2" disabled={disabled}>
+      <legend className="text-sm font-medium text-[var(--color-text)]">{legend}</legend>
+      <div className="flex items-center gap-2">
+        {STAR_VALUES.map((star) => {
+          const inputId = `${name}-star-${star}`;
+          const isChecked = value === star;
+          return (
+            <span key={star} className="inline-flex">
+              <input
+                type="radio"
+                id={inputId}
+                name={name}
+                value={star}
+                checked={isChecked}
+                onChange={() => onChange(star)}
+                className="peer sr-only"
+              />
+              <label
+                htmlFor={inputId}
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)] peer-checked:border-[var(--color-accent)] peer-checked:bg-[var(--color-accent)] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-accent)]"
+              >
+                <span aria-hidden="true">★</span>
+                <span className="sr-only">
+                  {star} star{star === 1 ? "" : "s"}
+                </span>
+              </label>
+            </span>
+          );
+        })}
+      </div>
+      <p className="text-sm text-[var(--color-text)]">
+        {value === null ? "No rating selected" : `${value} out of 5`}
+      </p>
+    </fieldset>
+  );
+}

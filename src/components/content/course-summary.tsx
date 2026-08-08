@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { courseUrl } from "@/lib/content/routes";
+import type { RatingAggregate } from "@/lib/ratings/aggregate";
+import { StarRatingDisplay } from "@/components/ratings/star-rating-display";
 
 /**
  * Course title, summary, item count, and summed estimated duration —
  * shared by the path page and the course page so the two can never
  * disagree (task 23). No duration column on `Course` (Prisma schema
  * design): duration is always summed from items at read time.
+ *
+ * `rating` is optional (task 22, ratings-and-feedback work item) — every
+ * existing call site that omits it renders exactly as before.
  */
 export interface CourseSummaryData {
   slug: string;
@@ -17,9 +22,11 @@ export interface CourseSummaryData {
 export function CourseSummary({
   course,
   linked = true,
+  rating,
 }: {
   course: CourseSummaryData;
   linked?: boolean;
+  rating?: RatingAggregate;
 }) {
   const totalMinutes = course.items.reduce((sum, item) => sum + item.estimatedMinutes, 0);
   const itemCount = course.items.length;
@@ -39,6 +46,11 @@ export function CourseSummary({
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
         {itemCount} item{itemCount === 1 ? "" : "s"} · {totalMinutes} min total
       </p>
+      {rating ? (
+        <div className="mt-1">
+          <StarRatingDisplay aggregate={rating} size="compact" />
+        </div>
+      ) : null}
     </div>
   );
 }

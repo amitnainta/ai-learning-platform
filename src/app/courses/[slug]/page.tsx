@@ -11,6 +11,10 @@ import { displayStatusFor } from "@/lib/progress/status";
 import { computeCourseProgress, findResumeTarget } from "@/lib/progress/percent";
 import { ProgressBar } from "@/components/progress/progress-bar";
 import { ResumeCard } from "@/components/progress/resume-card";
+import { StarRatingDisplay } from "@/components/ratings/star-rating-display";
+import { RatingSection } from "@/components/ratings/rating-section";
+import { getSingleCourseRatingAggregate } from "@/lib/ratings/queries";
+import { courseUrl } from "@/lib/content/routes";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +70,7 @@ export default async function CoursePage({ params }: { params: Promise<CoursePag
       )
     : null;
   const backPath = course.paths[0]?.path;
+  const ratingAggregate = await getSingleCourseRatingAggregate(course.id);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -77,9 +82,12 @@ export default async function CoursePage({ params }: { params: Promise<CoursePag
         </div>
       ) : null}
 
-      <p className="mb-6 text-sm text-[var(--color-text-muted)]">
+      <p className="mb-2 text-sm text-[var(--color-text-muted)]">
         {course.items.length} item{course.items.length === 1 ? "" : "s"} · {totalMinutes} min total
       </p>
+      <div className="mb-6">
+        <StarRatingDisplay aggregate={ratingAggregate} />
+      </div>
 
       {courseProgress ? (
         <div className="mb-6">
@@ -146,6 +154,19 @@ export default async function CoursePage({ params }: { params: Promise<CoursePag
           />
         ))}
       </ol>
+
+      <div className="mt-10">
+        <RatingSection
+          targetType="course"
+          targetId={course.id}
+          targetSlug={course.slug}
+          nextPath={courseUrl(course.slug)}
+          heading="Rate this course"
+          prompt="What did you think of this course?"
+          aggregate={ratingAggregate}
+          user={user}
+        />
+      </div>
     </div>
   );
 }

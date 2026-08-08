@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stripControlCharacters } from "./text";
 
 /**
  * Zod schemas for every auth/account form and API route (NFR-SEC-007:
@@ -9,22 +10,6 @@ import { z } from "zod";
 const NAME_MAX_LENGTH = 100;
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 128;
-
-// Strip ASCII control characters (e.g. a pasted null byte or terminal
-// escape sequence) from user-entered text before it's stored or rendered.
-// Implemented as a code-point filter (not a regex control-character
-// class) so this source file contains no raw control bytes.
-const MAX_CONTROL_CODE_POINT = 31;
-const DELETE_CODE_POINT = 127;
-
-function stripControlCharacters(value: string): string {
-  return Array.from(value)
-    .filter((char) => {
-      const codePoint = char.codePointAt(0) ?? 0;
-      return codePoint > MAX_CONTROL_CODE_POINT && codePoint !== DELETE_CODE_POINT;
-    })
-    .join("");
-}
 
 // Exported so server-side call sites that don't go through `signUpSchema`
 // wholesale (e.g. the Better Auth `databaseHooks.user.create.before` hook
