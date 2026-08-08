@@ -330,8 +330,8 @@ Ordered so each is independently completable. Paths are relative to the project 
 
 ### Moderation (decision #5)
 
-23. - [ ] `scripts/moderation.ts` (new): a `tsx` script following `scripts/import-content.ts`'s structure. `list` (default) prints unresolved flags grouped by rating — flag count, reasons, notes, target type/slug, the rating's stars and text, its `createdAt`/`updatedAt`, and the rating id — via a fixed number of queries; `hide <ratingId> --reason "..."` sets `hiddenAt`/`hiddenReason` and resolves that rating's flags; `unhide <ratingId>` clears them; `dismiss <ratingId>` resolves the flags without hiding. Prints a clear summary and exits non-zero on an unknown id or a missing argument.
-24. - [ ] `package.json`: add `"moderation:queue": "tsx scripts/moderation.ts list"`. No new dependency — `tsx` and `@prisma/client` are already present.
+23. - [x] `scripts/moderation.ts` (new): a `tsx` script following `scripts/import-content.ts`'s structure. `list` (default) prints unresolved flags grouped by rating — flag count, reasons, notes, target type/slug, the rating's stars and text, its `createdAt`/`updatedAt`, and the rating id — via a fixed number of queries; `hide <ratingId> --reason "..."` sets `hiddenAt`/`hiddenReason` and resolves that rating's flags; `unhide <ratingId>` clears them; `dismiss <ratingId>` resolves the flags without hiding. Prints a clear summary and exits non-zero on an unknown id or a missing argument.
+24. - [x] `package.json`: add `"moderation:queue": "tsx scripts/moderation.ts list"`. No new dependency — `tsx` and `@prisma/client` are already present.
 
 ### Tests — unit and component
 

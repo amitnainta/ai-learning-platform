@@ -22,6 +22,7 @@
     "prisma:studio": "prisma studio",
     "content:import": "tsx scripts/import-content.ts",
     "content:check": "tsx scripts/import-content.ts --dry-run",
+    "moderation:queue": "tsx scripts/moderation.ts list",
     "postinstall": "prisma generate"
   },
   "dependencies": {

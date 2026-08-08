@@ -80,3 +80,46 @@ export async function flagRating(input: FlagRatingInput, client: PrismaClient = 
     update: { reason, note },
   });
 }
+
+/**
+ * Moderation writes (decision #5) — called only by `scripts/moderation.ts`,
+ * never by the public API. `hideRating` also resolves that rating's
+ * still-unresolved flags in the same call (task 23: "hide ... resolves that
+ * rating's flags") so the queue drains as a side effect of acting on it.
+ */
+export async function hideRating(
+  input: { ratingId: string; reason: string },
+  client: PrismaClient = prisma,
+) {
+  const { ratingId, reason } = input;
+  const [rating] = await client.$transaction([
+    client.rating.update({
+      where: { id: ratingId },
+      data: { hiddenAt: new Date(), hiddenReason: reason },
+    }),
+    client.ratingFlag.updateMany({
+      where: { ratingId, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    }),
+  ]);
+  return rating;
+}
+
+/** Clears `hiddenAt`/`hiddenReason` — the rating reappears in the public list and the aggregate. */
+export async function unhideRating(ratingId: string, client: PrismaClient = prisma) {
+  return client.rating.update({
+    where: { id: ratingId },
+    data: { hiddenAt: null, hiddenReason: null },
+  });
+}
+
+/** Resolves a rating's unresolved flags without hiding it — the "reviewed, no action needed" outcome. */
+export async function dismissRatingFlags(
+  ratingId: string,
+  client: PrismaClient = prisma,
+): Promise<{ count: number }> {
+  return client.ratingFlag.updateMany({
+    where: { ratingId, resolvedAt: null },
+    data: { resolvedAt: new Date() },
+  });
+}
