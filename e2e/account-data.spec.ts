@@ -4,9 +4,17 @@ import { countVerificationRowsForUserId, findTestUserByEmail, uniqueTestEmail } 
 import { readLatestMailFor } from "./helpers/mail";
 import { registerAndOnboard } from "./helpers/register";
 import { completeContentItems } from "./helpers/progress";
+import { clickStar } from "./helpers/rating";
 
 const PASSWORD = "correct-horse-battery-staple";
-const COURSE_URL = "/courses/ai-foundations-for-builders";
+// Deliberately not "ai-foundations-for-builders" / "getting-started-with-
+// machine-learning" / "understanding-ai-capabilities" — those are rated
+// exclusively (with exact aggregate-count assertions) by
+// e2e/rating-course.spec.ts, e2e/rating-path.spec.ts, and
+// e2e/rating-flag.spec.ts respectively; a distinct course here avoids
+// corrupting their aggregates against the same shared, seeded course.
+const COURSE_URL = "/courses/ai-literacy-for-leaders";
+const COURSE_SLUG = "ai-literacy-for-leaders";
 
 // FR-ACC-007, NFR-COMP-004: export and hard delete.
 test.describe("account data export and deletion", () => {
@@ -135,7 +143,7 @@ test.describe("account data export and deletion", () => {
     const otherRatingResponse = await otherPage.request.post("/api/ratings", {
       data: {
         targetType: "course",
-        targetSlug: "ai-foundations-for-builders",
+        targetSlug: COURSE_SLUG,
         stars: 2,
         feedback: "Someone else's feedback to flag.",
       },
@@ -153,7 +161,7 @@ test.describe("account data export and deletion", () => {
     await completeContentItems(page.request, ["what-is-artificial-intelligence"]);
 
     await page.goto(COURSE_URL);
-    await page.getByRole("radio", { name: "5 stars" }).click();
+    await clickStar(page, "5 stars");
     await page.getByLabel(/what did you think of this course/i).fill("Really enjoyed this.");
     await page.getByRole("button", { name: /^submit rating$/i }).click();
     await expect(page.getByRole("status").filter({ hasText: /submitted/i })).toBeVisible();
@@ -175,7 +183,7 @@ test.describe("account data export and deletion", () => {
     expect(exportPayload.ratings).toContainEqual(
       expect.objectContaining({
         targetType: "course",
-        targetSlug: "ai-foundations-for-builders",
+        targetSlug: COURSE_SLUG,
         stars: 5,
         feedback: "Really enjoyed this.",
       }),

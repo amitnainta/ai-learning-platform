@@ -8,6 +8,20 @@
  * roving focus, and screen-reader group semantics for free — nothing here
  * is reimplemented. The selected value is also rendered as visible text
  * ("4 out of 5") so nothing depends on glyph shape or colour alone.
+ *
+ * Each `<input>` is nested **inside** its `<label>` (implicit labelling)
+ * rather than a sibling addressed by `htmlFor` alone — deliberate, not
+ * cosmetic. The input is visually hidden via `sr-only`
+ * (`position: absolute`, collapsed to ~1px), which needs a positioned
+ * ancestor to be contained within; nested inside a `relative` label, the
+ * hidden input's hit-target stays inside that label's own box instead of
+ * escaping to a shared ancestor and colliding with a sibling star's box —
+ * which otherwise makes the wrong star respond to a real click (caught by
+ * `e2e/rating-course.spec.ts` in a real browser; `jsdom`-based component
+ * tests can't catch this class of bug, since `jsdom` doesn't compute real
+ * layout). Checked/focus styling accordingly uses Tailwind's `has-*`
+ * variant (`:has()`) on the label instead of `peer-*`, since the input is
+ * now a descendant, not a preceding sibling.
  */
 
 const STAR_VALUES = [1, 2, 3, 4, 5] as const;
@@ -33,7 +47,11 @@ export function StarRatingInput({
           const inputId = `${name}-star-${star}`;
           const isChecked = value === star;
           return (
-            <span key={star} className="inline-flex">
+            <label
+              key={star}
+              htmlFor={inputId}
+              className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)] has-[:checked]:border-[var(--color-accent)] has-[:checked]:bg-[var(--color-accent)] has-[:checked]:text-white has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--color-accent)]"
+            >
               <input
                 type="radio"
                 id={inputId}
@@ -41,18 +59,13 @@ export function StarRatingInput({
                 value={star}
                 checked={isChecked}
                 onChange={() => onChange(star)}
-                className="peer sr-only"
+                className="sr-only"
               />
-              <label
-                htmlFor={inputId}
-                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)] peer-checked:border-[var(--color-accent)] peer-checked:bg-[var(--color-accent)] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-accent)]"
-              >
-                <span aria-hidden="true">★</span>
-                <span className="sr-only">
-                  {star} star{star === 1 ? "" : "s"}
-                </span>
-              </label>
-            </span>
+              <span aria-hidden="true">★</span>
+              <span className="sr-only">
+                {star} star{star === 1 ? "" : "s"}
+              </span>
+            </label>
           );
         })}
       </div>

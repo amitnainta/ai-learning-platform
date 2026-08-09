@@ -2,9 +2,15 @@ import { expect, test } from "@playwright/test";
 import { findRatingFlagsForEmail, uniqueTestEmail } from "./helpers/db";
 import { registerAndOnboard } from "./helpers/register";
 import { completeContentItems } from "./helpers/progress";
+import { clickStar } from "./helpers/rating";
 
 const PASSWORD = "correct-horse-battery-staple";
-const COURSE_URL = "/courses/ai-foundations-for-builders";
+// Deliberately not "ai-foundations-for-builders" (e2e/rating-course.spec.ts
+// rates that course exclusively and asserts an exact aggregate count) or
+// "getting-started-with-machine-learning" (e2e/rating-path.spec.ts's
+// per-course check) — a distinct course keeps this spec's assertions from
+// colliding with either against the same shared, seeded course.
+const COURSE_URL = "/courses/understanding-ai-capabilities";
 
 // FR-RATE-006: any signed-in user can flag someone else's rating with a
 // reason; the flag records but never hides the rating (decision #5).
@@ -22,14 +28,18 @@ test.describe("rating: flag", () => {
       { email: emailA, password: PASSWORD, name: "Feedback Author" },
       { roleArchetype: "TECHNICAL_BUILDER", level: "ZERO_KNOWLEDGE" },
     );
-    await completeContentItems(pageA.request, ["what-is-artificial-intelligence"]);
+    await completeContentItems(pageA.request, ["google-ai-crash-course"]);
 
     await pageA.goto(COURSE_URL);
-    await pageA.getByRole("radio", { name: "2 stars" }).click();
+    await clickStar(pageA, "2 stars");
     await pageA.getByLabel(/what did you think of this course/i).fill("This needs more examples.");
     await pageA.getByRole("button", { name: /^submit rating$/i }).click();
     await expect(pageA.getByRole("status").filter({ hasText: /submitted/i })).toBeVisible();
-    await expect(pageA.getByText("This needs more examples.")).toBeVisible();
+    // Scoped to the rendered <p> in the feedback list, not pageA's own
+    // <textarea> (which still holds the just-submitted value too).
+    await expect(
+      pageA.getByRole("paragraph").filter({ hasText: "This needs more examples." }),
+    ).toBeVisible();
 
     // The author sees no report control on their own rating.
     await expect(pageA.getByRole("button", { name: /^report/i })).toHaveCount(0);

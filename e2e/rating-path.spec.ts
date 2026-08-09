@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { findRatingsForEmail, uniqueTestEmail } from "./helpers/db";
 import { registerAndOnboard } from "./helpers/register";
 import { completeContentItems, TECHNICAL_BUILDER_ZERO_KNOWLEDGE_ITEMS } from "./helpers/progress";
+import { clickStar } from "./helpers/rating";
 
 const PASSWORD = "correct-horse-battery-staple";
 const PATH_URL = "/paths/technical-builder/zero-knowledge";
@@ -9,6 +10,13 @@ const PATH_URL = "/paths/technical-builder/zero-knowledge";
 // FR-RATE-003/004/008: a path can only be rated once every currently-
 // published item is COMPLETE; below that, both the UI and a direct API
 // write are refused.
+//
+// Rates "getting-started-with-machine-learning" (this path's second
+// course) for the per-course-aggregate check below — deliberately not
+// "ai-foundations-for-builders", which e2e/rating-course.spec.ts rates
+// exclusively and asserts an exact aggregate count against; the two
+// specs would otherwise corrupt each other's aggregate assertions against
+// the same shared, seeded course.
 test.describe("rating: path", () => {
   test("path gate refuses below 100% (UI and a direct 403), then rating a completed path with role/level feedback; per-course aggregate reflects a course rating", async ({
     page,
@@ -33,27 +41,22 @@ test.describe("rating: path", () => {
     expect(directWrite.status()).toBe(403);
     expect(await findRatingsForEmail(email)).toHaveLength(0);
 
-    // Rate the first course while we're here, to check the per-course
-    // aggregate on the path page below.
-    await completeContentItems(page.request, ["what-is-artificial-intelligence"]);
+    // Complete the whole path, then rate its second course.
+    await completeContentItems(page.request, TECHNICAL_BUILDER_ZERO_KNOWLEDGE_ITEMS);
     const courseRatingResponse = await page.request.post("/api/ratings", {
-      data: { targetType: "course", targetSlug: "ai-foundations-for-builders", stars: 3 },
+      data: {
+        targetType: "course",
+        targetSlug: "getting-started-with-machine-learning",
+        stars: 3,
+      },
     });
     expect(courseRatingResponse.ok()).toBe(true);
-
-    // Complete the rest of the path.
-    await completeContentItems(
-      page.request,
-      TECHNICAL_BUILDER_ZERO_KNOWLEDGE_ITEMS.filter(
-        (slug) => slug !== "what-is-artificial-intelligence",
-      ),
-    );
 
     await page.goto(PATH_URL);
     await expect(page.getByRole("group", { name: /your rating/i })).toBeVisible();
     await expect(page.getByText(/did this path fit your role and level/i)).toBeVisible();
 
-    await page.getByRole("radio", { name: "5 stars" }).click();
+    await clickStar(page, "5 stars");
     await page
       .getByLabel(/did this path fit your role and level/i)
       .fill("Perfect fit for a zero-knowledge technical builder.");
@@ -62,12 +65,16 @@ test.describe("rating: path", () => {
 
     await expect(page.getByText("5 out of 5 - 1 rating").first()).toBeVisible();
     await expect(
-      page.getByText("Perfect fit for a zero-knowledge technical builder."),
+      page
+        .getByRole("paragraph")
+        .filter({ hasText: "Perfect fit for a zero-knowledge technical builder." }),
     ).toBeVisible();
 
     // The per-course aggregate on the path page reflects the course rating
     // submitted earlier in this test.
-    const courseCard = page.locator("section").filter({ hasText: "AI Foundations for Builders" });
+    const courseCard = page
+      .locator("section")
+      .filter({ hasText: "Getting Started with Machine Learning" });
     await expect(courseCard.getByText("3 out of 5 - 1 rating")).toBeVisible();
   });
 });

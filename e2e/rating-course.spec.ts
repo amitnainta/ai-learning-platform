@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { uniqueTestEmail } from "./helpers/db";
 import { registerAndOnboard } from "./helpers/register";
 import { completeContentItems } from "./helpers/progress";
+import { clickStar } from "./helpers/rating";
 
 const PASSWORD = "correct-horse-battery-staple";
 const XSS_PAYLOAD = "<script>window.__xssFired = true;</script>Great course overall!";
@@ -36,7 +37,7 @@ test.describe("rating: course", () => {
     await page.reload();
     await expect(page.getByRole("group", { name: /your rating/i })).toBeVisible();
 
-    await page.getByRole("radio", { name: "4 stars" }).click();
+    await clickStar(page, "4 stars");
     await page.getByLabel(/what did you think of this course/i).fill(XSS_PAYLOAD);
     await page.getByRole("button", { name: /^submit rating$/i }).click();
     await expect(page.getByRole("status").filter({ hasText: /submitted/i })).toBeVisible();
@@ -47,17 +48,20 @@ test.describe("rating: course", () => {
       await page.evaluate(() => (window as { __xssFired?: boolean }).__xssFired),
     ).toBeUndefined();
 
-    // The feedback renders as literal visible text, not a live <script> tag.
-    await expect(page.getByText(XSS_PAYLOAD)).toBeVisible();
+    // The feedback renders as literal visible text, not a live <script> tag —
+    // scoped to the rendered <p> in the feedback list, not the form's own
+    // <textarea> (which still holds the just-submitted value too).
+    await expect(page.getByRole("paragraph").filter({ hasText: XSS_PAYLOAD })).toBeVisible();
     expect(await page.locator("script", { hasText: "__xssFired" }).count()).toBe(0);
 
-    // The author's name/role/level are shown alongside the feedback.
+    // The author's name/role/level are shown alongside the feedback, in the
+    // rating list entry's own byline (scoped to avoid matching unrelated
+    // "Technical Builder" text elsewhere on the page, e.g. path links/tags).
     await expect(page.getByText("Rating Course User")).toBeVisible();
-    await expect(page.getByText(/technical builder/i)).toBeVisible();
-    await expect(page.getByText(/zero knowledge/i)).toBeVisible();
+    await expect(page.getByText(/technical builder · zero knowledge/i)).toBeVisible();
 
     // Edit to 5 stars.
-    await page.getByRole("radio", { name: "5 stars" }).click();
+    await clickStar(page, "5 stars");
     await page.getByRole("button", { name: /update your rating/i }).click();
     await expect(page.getByRole("status").filter({ hasText: /updated/i })).toBeVisible();
     await expect(page.getByText("5 out of 5 - 1 rating").first()).toBeVisible();
@@ -71,7 +75,7 @@ test.describe("rating: course", () => {
     await page.context().clearCookies();
     await page.reload();
     await expect(page.getByText("Not yet rated").first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
     await expect(page.getByRole("group", { name: /your rating/i })).toHaveCount(0);
   });
 });
