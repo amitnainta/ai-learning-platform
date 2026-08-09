@@ -70,14 +70,19 @@ export interface FlagRatingInput {
 /**
  * Upserts on `ratingId_userId` (decision #5) so a repeat report by the same
  * user updates the reason/note rather than throwing a unique-constraint
- * error or creating a duplicate row.
+ * error or creating a duplicate row. The `update` branch also resets
+ * `resolvedAt` to `null`: without that, a reporter whose earlier flag was
+ * already resolved (hidden or dismissed) and who reports the same rating
+ * again would silently write a row that `listUnresolvedFlagsGroupedByRating`
+ * excludes forever, even though the API told them the report succeeded
+ * (fix-pass B1). A repeat report must genuinely reopen the queue entry.
  */
 export async function flagRating(input: FlagRatingInput, client: PrismaClient = prisma) {
   const { ratingId, userId, reason, note } = input;
   return client.ratingFlag.upsert({
     where: { ratingId_userId: { ratingId, userId } },
     create: { ratingId, userId, reason, note },
-    update: { reason, note },
+    update: { reason, note, resolvedAt: null },
   });
 }
 

@@ -82,6 +82,22 @@ describe("flagRating", () => {
     const call = client.ratingFlag.upsert.mock.calls[0]![0];
     expect(call.where).toEqual({ ratingId_userId: { ratingId: "r1", userId: "u1" } });
     expect(call.create).toEqual({ ratingId: "r1", userId: "u1", reason: "SPAM", note: null });
-    expect(call.update).toEqual({ reason: "SPAM", note: null });
+    // The `update` branch must also reset `resolvedAt` to `null` (fix-pass
+    // B1): otherwise a repeat report from a reporter whose earlier flag was
+    // already resolved would keep the old `resolvedAt` timestamp forever and
+    // never reach `listUnresolvedFlagsGroupedByRating`'s `resolvedAt: null`
+    // filter, even though the API told the reporter the report succeeded.
+    expect(call.update).toEqual({ reason: "SPAM", note: null, resolvedAt: null });
+  });
+
+  it("resets resolvedAt: null on the update branch so a re-report reopens a resolved flag (fix-pass B1)", async () => {
+    const client = buildMockClient();
+    await flagRating(
+      { ratingId: "r1", userId: "u1", reason: "OUTDATED_OR_INCORRECT", note: "still wrong" },
+      client as never,
+    );
+
+    const call = client.ratingFlag.upsert.mock.calls[0]![0];
+    expect(call.update).toHaveProperty("resolvedAt", null);
   });
 });
