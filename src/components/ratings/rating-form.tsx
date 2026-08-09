@@ -52,6 +52,13 @@ export function RatingForm({
       return;
     }
 
+    if (feedback.length > FEEDBACK_MAX_LENGTH) {
+      const message = `Feedback must be ${FEEDBACK_MAX_LENGTH} characters or fewer.`;
+      setError(message);
+      setAnnouncement(message);
+      return;
+    }
+
     setIsPending(true);
     setError(null);
 
