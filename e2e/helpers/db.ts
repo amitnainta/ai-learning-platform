@@ -86,6 +86,38 @@ export async function findProgressForEmail(email: string) {
   });
 }
 
+/**
+ * A test user's ratings joined to their target's slug/title, for
+ * assertions the UI doesn't expose directly (e.g. that a 403'd write left
+ * no row at all) — task 36, factory/work/ratings-and-feedback/PLAN.md.
+ * `cleanupTestUsers()` above needs no change for `Rating`/`RatingFlag`:
+ * both are `onDelete: Cascade` from `User` (prisma/schema.prisma), so
+ * deleting the test `User` row already removes every rating/flag row it
+ * owns. This helper, like `findProgressForEmail`, only reads — teardown
+ * must still never touch content rows.
+ */
+export async function findRatingsForEmail(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return [];
+  }
+  return prisma.rating.findMany({
+    where: { userId: user.id },
+    include: {
+      course: { select: { slug: true, title: true } },
+      path: { select: { slug: true, title: true } },
+    },
+  });
+}
+
+export async function findRatingFlagsForEmail(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return [];
+  }
+  return prisma.ratingFlag.findMany({ where: { userId: user.id } });
+}
+
 export async function disconnectTestDb(): Promise<void> {
   await prisma.$disconnect();
 }
