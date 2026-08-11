@@ -19,6 +19,17 @@ or the item card, and gets a resume link back to the first unfinished item;
 progress on a shared item is retained automatically when switching between
 paths that both include it (FR-PATH-009).
 
+Ratings and feedback are the fourth — see `docs/architecture/ratings.md`. A
+signed-in learner who has **started** a course, or **completed** a path
+(100%, per progress tracking), can leave a 1-5 star rating and optional
+free-text feedback; every course and path page shows the average rating and
+count (average, `count` — "Not yet rated" at zero), and each published
+feedback entry is shown publicly with the author's display name, role, and
+level. Any signed-in user can flag someone else's feedback with a reason;
+flags never auto-hide anything — they're actioned by a maintainer via
+`npm run moderation:queue` and `scripts/moderation.ts` (`hide`/`unhide`/
+`dismiss`) — see `docs/runbooks/content-moderation.md`.
+
 ## Stack
 
 - **Framework**: Next.js (App Router), React, TypeScript — a full-stack
@@ -99,24 +110,25 @@ selection logic and `docs/architecture/auth.md` §5.
 
 ## Commands
 
-| Command                   | What it does                                                            |
-| ------------------------- | ----------------------------------------------------------------------- |
-| `npm run dev`             | Start the Next.js dev server                                            |
-| `npm run build`           | Production build (also type-checks)                                     |
-| `npm run start`           | Start the production server (after `build`)                             |
-| `npm run lint`            | ESLint (`eslint-config-next` + `typescript-eslint`)                     |
-| `npm run format`          | Prettier — write formatting fixes                                       |
-| `npm run format:check`    | Prettier — check only, no writes (used in CI indirectly via lint/build) |
-| `npm run test`            | Unit/component tests (Vitest + React Testing Library)                   |
-| `npm run test:watch`      | Vitest in watch mode                                                    |
-| `npm run test:e2e`        | End-to-end tests (Playwright) — builds and boots the app first          |
-| `npm run test:e2e:ui`     | End-to-end tests in Playwright's interactive UI mode                    |
-| `npm run prisma:generate` | Regenerate the Prisma client from `prisma/schema.prisma`                |
-| `npm run prisma:migrate`  | Create/apply a dev migration (`prisma migrate dev`)                     |
-| `npm run prisma:deploy`   | Apply pending migrations in a non-interactive/production context        |
-| `npm run prisma:studio`   | Open Prisma Studio (a GUI for the database)                             |
-| `npm run content:check`   | Validate `content/**` against the pack schemas — writes nothing         |
-| `npm run content:import`  | Validate and import `content/**` into the database — idempotent         |
+| Command                    | What it does                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `npm run dev`              | Start the Next.js dev server                                                      |
+| `npm run build`            | Production build (also type-checks)                                               |
+| `npm run start`            | Start the production server (after `build`)                                       |
+| `npm run lint`             | ESLint (`eslint-config-next` + `typescript-eslint`)                               |
+| `npm run format`           | Prettier — write formatting fixes                                                 |
+| `npm run format:check`     | Prettier — check only, no writes (used in CI indirectly via lint/build)           |
+| `npm run test`             | Unit/component tests (Vitest + React Testing Library)                             |
+| `npm run test:watch`       | Vitest in watch mode                                                              |
+| `npm run test:e2e`         | End-to-end tests (Playwright) — builds and boots the app first                    |
+| `npm run test:e2e:ui`      | End-to-end tests in Playwright's interactive UI mode                              |
+| `npm run prisma:generate`  | Regenerate the Prisma client from `prisma/schema.prisma`                          |
+| `npm run prisma:migrate`   | Create/apply a dev migration (`prisma migrate dev`)                               |
+| `npm run prisma:deploy`    | Apply pending migrations in a non-interactive/production context                  |
+| `npm run prisma:studio`    | Open Prisma Studio (a GUI for the database)                                       |
+| `npm run content:check`    | Validate `content/**` against the pack schemas — writes nothing                   |
+| `npm run content:import`   | Validate and import `content/**` into the database — idempotent                   |
+| `npm run moderation:queue` | List unresolved rating/feedback flags (see `docs/runbooks/content-moderation.md`) |
 
 ## Environment variables
 
@@ -255,10 +267,18 @@ uptime-monitor accounts is tracked as an explicit manual checklist in
   client-beacon auto-"in progress" mechanism, read-time percentages and
   resume-target selection, and the FR-PATH-009 retention verification) and
   its FR/NFR mapping.
+- `docs/architecture/ratings.md` — the ratings-and-feedback decision record
+  (the `Rating`/`RatingFlag` model and its hand-written CHECK constraints,
+  the FR-RATE-008 eligibility gate shared by the UI and the API, read-time
+  aggregates, the NFR-SEC-007 sanitize-in/escape-out design, and the
+  moderation CLI) and its FR/NFR mapping.
+- `docs/runbooks/content-moderation.md` — how a flagged rating reaches the
+  maintainer and what `npm run moderation:queue` / `scripts/moderation.ts`
+  can do about it.
 - `docs/content/authoring-guide.md` — how to add/edit/retire content and get
   it live, field by field, including the `glossary:` link convention, the
   plain-language rules for zero-knowledge lessons, and the "never rename a
-  published item's slug" rule progress tracking depends on.
+  published item's slug" rule progress tracking and ratings both depend on.
 - `docs/content/taxonomy.md` — the human-readable tagging taxonomy (roles,
   levels, topics, formats, source types); must match `content/taxonomy.yaml`.
 - `docs/architecture/disaster-recovery.md` — DR process, failure scenarios, and

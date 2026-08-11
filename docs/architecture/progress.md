@@ -365,7 +365,11 @@ Recorded here so those future work items don't have to re-derive it:
   real edge case this item's read-time percentages create, not a
   hypothetical one.
 - **`FR-RATE-008`'s "has started / has completed" gate is `Progress` row
-  existence and `status = COMPLETE`** — no new column needed.
+  existence and `status = COMPLETE`** — no new column needed. **Promise
+  honoured**: the ratings-and-feedback work item built exactly this gate in
+  `src/lib/ratings/eligibility.ts`, calling `computePathProgress()` from
+  this file verbatim rather than reimplementing it — see
+  `docs/architecture/ratings.md` decision #2.
 - **`FR-PROG-004`'s streaks should derive from `lastViewedAt` and
   `completedAt`**, at least until a streak needs multiple events per day;
   no activity-log table is anticipated here.

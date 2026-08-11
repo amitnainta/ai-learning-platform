@@ -268,9 +268,21 @@ it now points at a _retired_, unreachable item. Their completion isn't
 lost from the database, but it silently drops out of every percentage
 (FR-PROG-003's read-time computation excludes retired items from both
 numerator and denominator — `docs/architecture/progress.md` decision #5),
-and the item they actually finished is gone from their resume path. The
-same applies to a course or path `slug` and any future rating/certificate
-that comes to key on it.
+and the item they actually finished is gone from their resume path.
+
+The same is now true of **ratings** as well
+(`docs/architecture/ratings.md`, the ratings-and-feedback work item):
+`Rating` rows key on `Course.id`/`Path.id`, not on slug. Renaming a
+published course or path's `slug` retires the old row (id preserved) and
+creates a new one with a new id — any ratings and feedback attached to the
+old row are stranded on a retired, unreachable target: they survive in the
+database (an author can still see and delete their own rating via
+`GET`/`DELETE /api/account/export` and `/api/ratings`), but they silently
+drop out of the aggregate average/count shown on the new row, because the
+aggregate `groupBy` (`src/lib/ratings/queries.ts`) only ever sees ratings
+attached to the current, published `Course`/`Path` id. A future
+certificate that comes to key on `Course.id`/`Path.id` would have exactly
+the same exposure.
 
 **If a rename is genuinely unavoidable** (a typo in the URL-visible slug, a
 legal/naming change), the safe procedure is:

@@ -16,6 +16,10 @@ import {
 } from "@/lib/progress/percent";
 import { ProgressBar } from "@/components/progress/progress-bar";
 import { ResumeCard } from "@/components/progress/resume-card";
+import { StarRatingDisplay } from "@/components/ratings/star-rating-display";
+import { RatingSection } from "@/components/ratings/rating-section";
+import { getCourseRatingAggregates, getSinglePathRatingAggregate } from "@/lib/ratings/queries";
+import { EMPTY_AGGREGATE } from "@/lib/ratings/aggregate";
 
 export const dynamic = "force-dynamic";
 
@@ -94,10 +98,21 @@ export default async function PathPage({ params }: { params: Promise<PathPagePar
   const pathProgress = progressMap ? computePathProgress(progressCourses, progressMap) : null;
   const resumeTarget = progressMap ? findResumeTarget(progressCourses, progressMap) : null;
 
+  // One `groupBy` for every course on this page — never one query per
+  // course (AC9, decision #6, factory/work/ratings-and-feedback/PLAN.md).
+  const courseIds = path.courses.map((pathCourse) => pathCourse.course.id);
+  const [courseRatingAggregates, pathRatingAggregate] = await Promise.all([
+    getCourseRatingAggregates(courseIds),
+    getSinglePathRatingAggregate(path.id),
+  ]);
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       <h1 className="mb-2 text-2xl font-semibold text-[var(--color-text)]">{path.title}</h1>
-      <p className="mb-4 text-[var(--color-text-muted)]">{path.summary}</p>
+      <p className="mb-2 text-[var(--color-text-muted)]">{path.summary}</p>
+      <div className="mb-4">
+        <StarRatingDisplay aggregate={pathRatingAggregate} />
+      </div>
       {isCurrentPath ? (
         <p
           role="status"
@@ -167,6 +182,7 @@ export default async function PathPage({ params }: { params: Promise<PathPagePar
                     estimatedMinutes: item.contentItem.estimatedMinutes,
                   })),
                 }}
+                rating={courseRatingAggregates.get(pathCourse.course.id) ?? EMPTY_AGGREGATE}
               />
               {courseProgress ? (
                 <div className="mt-3">
@@ -206,6 +222,19 @@ export default async function PathPage({ params }: { params: Promise<PathPagePar
             </section>
           );
         })}
+      </div>
+
+      <div className="mt-10">
+        <RatingSection
+          targetType="path"
+          targetId={path.id}
+          targetSlug={path.slug}
+          nextPath={pathUrl(roleArchetype, path.level)}
+          heading="Rate this path"
+          prompt="Did this path fit your role and level?"
+          aggregate={pathRatingAggregate}
+          user={user}
+        />
       </div>
     </div>
   );

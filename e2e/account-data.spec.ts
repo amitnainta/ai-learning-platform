@@ -3,8 +3,18 @@ import { expect, test } from "@playwright/test";
 import { countVerificationRowsForUserId, findTestUserByEmail, uniqueTestEmail } from "./helpers/db";
 import { readLatestMailFor } from "./helpers/mail";
 import { registerAndOnboard } from "./helpers/register";
+import { completeContentItems } from "./helpers/progress";
+import { clickStar } from "./helpers/rating";
 
 const PASSWORD = "correct-horse-battery-staple";
+// Deliberately not "ai-foundations-for-builders" / "getting-started-with-
+// machine-learning" / "understanding-ai-capabilities" — those are rated
+// exclusively (with exact aggregate-count assertions) by
+// e2e/rating-course.spec.ts, e2e/rating-path.spec.ts, and
+// e2e/rating-flag.spec.ts respectively; a distinct course here avoids
+// corrupting their aggregates against the same shared, seeded course.
+const COURSE_URL = "/courses/ai-literacy-for-leaders";
+const COURSE_SLUG = "ai-literacy-for-leaders";
 
 // FR-ACC-007, NFR-COMP-004: export and hard delete.
 test.describe("account data export and deletion", () => {
@@ -112,5 +122,78 @@ test.describe("account data export and deletion", () => {
     await expect(page).toHaveURL(/\/account-deleted$/);
 
     expect(await countVerificationRowsForUserId(userId)).toBe(0);
+  });
+
+  // ratings-and-feedback work item, decision #9: ratings and flags are
+  // personal data too — exported with target slugs/titles (never a cuid)
+  // and still no secret or other user's email.
+  test("the export includes a ratings entry and a ratingFlags entry after rating a course and flagging another user's rating", async ({
+    page,
+    browser,
+  }) => {
+    const otherEmail = uniqueTestEmail("data-rating-other");
+    const otherContext = await browser.newContext();
+    const otherPage = await otherContext.newPage();
+    await registerAndOnboard(
+      otherPage.request,
+      { email: otherEmail, password: PASSWORD, name: "Other Feedback Author" },
+      { roleArchetype: "TECHNICAL_BUILDER", level: "ZERO_KNOWLEDGE" },
+    );
+    await completeContentItems(otherPage.request, ["what-is-artificial-intelligence"]);
+    const otherRatingResponse = await otherPage.request.post("/api/ratings", {
+      data: {
+        targetType: "course",
+        targetSlug: COURSE_SLUG,
+        stars: 2,
+        feedback: "Someone else's feedback to flag.",
+      },
+    });
+    expect(otherRatingResponse.ok()).toBe(true);
+    const otherRating = (await otherRatingResponse.json()).rating;
+    await otherContext.close();
+
+    const email = uniqueTestEmail("data-rating");
+    await registerAndOnboard(
+      page.request,
+      { email, password: PASSWORD, name: "Data Rights Rating User" },
+      { roleArchetype: "TECHNICAL_BUILDER", level: "ZERO_KNOWLEDGE" },
+    );
+    await completeContentItems(page.request, ["what-is-artificial-intelligence"]);
+
+    await page.goto(COURSE_URL);
+    await clickStar(page, "5 stars");
+    await page.getByLabel(/what did you think of this course/i).fill("Really enjoyed this.");
+    await page.getByRole("button", { name: /^submit rating$/i }).click();
+    await expect(page.getByRole("status").filter({ hasText: /submitted/i })).toBeVisible();
+
+    const flagResponse = await page.request.post("/api/ratings/flags", {
+      data: { ratingId: otherRating.id, reason: "OTHER", note: "For export-test coverage." },
+    });
+    expect(flagResponse.ok()).toBe(true);
+
+    await page.goto("/account");
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link", { name: /download my data/i }).click(),
+    ]);
+    const downloadPath = await download.path();
+    const contents = readFileSync(downloadPath as string, "utf-8");
+    const exportPayload = JSON.parse(contents);
+
+    expect(exportPayload.ratings).toContainEqual(
+      expect.objectContaining({
+        targetType: "course",
+        targetSlug: COURSE_SLUG,
+        stars: 5,
+        feedback: "Really enjoyed this.",
+      }),
+    );
+    expect(exportPayload.ratingFlags).toContainEqual(
+      expect.objectContaining({ ratingId: otherRating.id, reason: "OTHER" }),
+    );
+
+    expect(contents.toLowerCase()).not.toContain('"password"');
+    expect(contents).not.toContain("token");
+    expect(contents).not.toContain(otherEmail);
   });
 });

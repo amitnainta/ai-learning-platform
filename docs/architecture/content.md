@@ -202,6 +202,15 @@ decision #6" section for the check, including the one caveat it surfaced
 "Never rename a published item's slug" rule in
 `docs/content/authoring-guide.md`).
 
+**Commitment honoured a second time**: the ratings-and-feedback work item
+verified the `Course.id`/`Path.id` attachment point promised above against
+the same importer code and shipped `Rating` keyed on exactly those ids,
+with no join-row (`PathCourse`/`CourseItem`) ever used as a key — see
+`docs/architecture/ratings.md`'s "Verification of the shipped items'
+attachment-point commitments" section, which surfaces the same
+slug-rename caveat for ratings that `progress-tracking` surfaced for
+progress.
+
 ## 7. Review cadence — stored per item, derived at import
 
 **Decision**: `sourceType = CURATED` defaults to `reviewCadenceDays = 90`

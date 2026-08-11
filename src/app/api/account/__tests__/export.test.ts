@@ -59,6 +59,33 @@ const progressFindManyMock = vi.fn().mockResolvedValue([
   },
 ]);
 
+// ratings-and-feedback work item (decision #9): the export gains `ratings`
+// and `ratingFlags` arrays. One fixture row each so the "contains a ratings
+// entry" shape is exercised at the unit level too — the full journey (rate
+// a course, flag another user's rating, download, assert both are present)
+// is e2e-covered in account-data.spec.ts.
+const ratingFindManyMock = vi.fn().mockResolvedValue([
+  {
+    stars: 5,
+    feedback: "Excellent course",
+    hiddenAt: null,
+    createdAt: new Date("2026-01-03T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-03T00:00:00.000Z"),
+    course: { slug: "ai-foundations", title: "AI Foundations" },
+    path: null,
+  },
+]);
+
+const ratingFlagFindManyMock = vi.fn().mockResolvedValue([
+  {
+    ratingId: "rating_2",
+    reason: "SPAM",
+    note: null,
+    createdAt: new Date("2026-01-04T00:00:00.000Z"),
+    resolvedAt: null,
+  },
+]);
+
 vi.mock("@/lib/auth/session", () => ({
   requireUser: vi.fn().mockResolvedValue(MOCK_USER),
 }));
@@ -68,6 +95,8 @@ vi.mock("@/lib/prisma", () => ({
     user: { findUniqueOrThrow: (...args: unknown[]) => findUniqueOrThrowMock(...args) },
     session: { findMany: (...args: unknown[]) => sessionFindManyMock(...args) },
     progress: { findMany: (...args: unknown[]) => progressFindManyMock(...args) },
+    rating: { findMany: (...args: unknown[]) => ratingFindManyMock(...args) },
+    ratingFlag: { findMany: (...args: unknown[]) => ratingFlagFindManyMock(...args) },
   },
 }));
 
@@ -107,6 +136,34 @@ describe("GET /api/account/export", () => {
         startedAt: "2026-01-01T00:00:00.000Z",
         lastViewedAt: "2026-01-02T00:00:00.000Z",
         completedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("includes ratings and ratingFlags arrays carrying target slugs/titles, never a cuid target (decision #9)", async () => {
+    const { GET } = await import("../export/route");
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.ratings).toEqual([
+      {
+        targetType: "course",
+        targetSlug: "ai-foundations",
+        targetTitle: "AI Foundations",
+        stars: 5,
+        feedback: "Excellent course",
+        hidden: false,
+        createdAt: "2026-01-03T00:00:00.000Z",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      },
+    ]);
+    expect(body.ratingFlags).toEqual([
+      {
+        ratingId: "rating_2",
+        reason: "SPAM",
+        note: null,
+        createdAt: "2026-01-04T00:00:00.000Z",
+        resolved: false,
       },
     ]);
   });
