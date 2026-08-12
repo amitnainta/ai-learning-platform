@@ -8,8 +8,8 @@ level: INTERMEDIATE
 format: ARTICLE
 estimatedMinutes: 20
 topics: [ai-business-value, ai-strategy]
-lastReviewedAt: 2026-06-10
-externalUrl: "https://sloanreview.mit.edu/big-ideas/artificial-intelligence-business/"
+lastReviewedAt: 2026-08-11
+externalUrl: "https://sloanreview.mit.edu/big-ideas/artificial-intelligence-business-strategy/"
 sourcePublisher: "MIT Sloan Management Review"
 attributionNote: "A curated hub of MIT Sloan's AI-and-strategy research; some linked articles require a subscription."
 ---
